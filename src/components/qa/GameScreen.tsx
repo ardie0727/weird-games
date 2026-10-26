@@ -180,7 +180,7 @@ export function GameScreen({ mode }: { mode: ModeId }) {
   // Test hook for automated browser tests. Only exists in `next dev`.
   useEffect(() => {
     if (process.env.NODE_ENV !== "development" || !run) return;
-    (window as unknown as Record<string, unknown>).__qa = { run, state: stateRef, grade: (i: number, v: AnswerValue) => gradeAnswer(run.engine, run.rounds[i], v) };
+    (window as unknown as Record<string, unknown>).__qa = { run, state: stateRef, events, grade: (i: number, v: AnswerValue) => gradeAnswer(run.engine, run.rounds[i], v) };
   }, [run]);
 
   const t = () => Math.round(performance.now() - t0.current);
