@@ -105,6 +105,14 @@ const LAB = [
     color: "#b26bff",
     icon: "👻",
   },
+  {
+    href: "/lab/cloud-sculptor",
+    name: "Cloud Sculptor",
+    tag: "SHAPE · BEAT THE WIND",
+    blurb: "Push a drifting cloud around until it looks like the target animal, before the wind tears it apart.",
+    color: "#22f3ff",
+    icon: "☁️",
+  },
 ];
 
 export default function Lab() {
