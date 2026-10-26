@@ -9,7 +9,7 @@ const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", displ
 
 export const metadata: Metadata = {
   title: { default: "Weird Games", template: "%s · Weird Games" },
-  description: "Odd little arcade games for the browser. Starting with Query Arcade: a retro SQL and PySpark game.",
+  description: "Odd little arcade games for the browser: Query Arcade (retro SQL and PySpark) and Daily Weird Guess (one absurd fact a day).",
   icons: { icon: "/icon.svg" },
 };
 
