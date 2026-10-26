@@ -7,6 +7,8 @@ Odd little browser games. The first one is **Query Arcade**: a fast, retro arcad
 - `/daily-weird` is Daily Weird Guess: one absurd fact a day (midnight IST), two choices, a streak
   and a streak board. Facts live server-side in `src/lib/daily/facts.ts`, so the answer only reaches
   the browser after a guess. One guess per player per day (`dw_players`, `dw_guesses`).
+- `/rubber-bullet-man` is Rubber Bullet Man: a canvas arena shooter where every bullet bounces, including
+  back at you. Five bullet types, waves with a boss every fifth wave, and a daily/all-time board (`rbm_scores`).
 
 ## Query Arcade in one minute
 
