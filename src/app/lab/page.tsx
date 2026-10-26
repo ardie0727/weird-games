@@ -129,6 +129,14 @@ const LAB = [
     color: "#ff8a3d",
     icon: "🩴",
   },
+  {
+    href: "/lab/monkey-thief",
+    name: "Monkey Thief",
+    tag: "TAP · GUARD",
+    blurb: "Monkeys climb onto your balcony for snacks, phones and glasses. Tap fast to shoo them and save the loot.",
+    color: "#ff8a3d",
+    icon: "🐒",
+  },
 ];
 
 export default function Lab() {
