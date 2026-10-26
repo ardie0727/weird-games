@@ -161,6 +161,14 @@ const LAB = [
     color: "#ffe14d",
     icon: "🙆",
   },
+  {
+    href: "/lab/cat-burglar",
+    name: "Cat Burglar",
+    tag: "STEALTH · CHAOS",
+    blurb: "Paw everything off the shelf while the human scrolls. Freeze and look cute when they glance up.",
+    color: "#ff8a3d",
+    icon: "🐈",
+  },
 ];
 
 export default function Lab() {
