@@ -97,6 +97,14 @@ const LAB = [
     color: "#ffe14d",
     icon: "🛵",
   },
+  {
+    href: "/lab/ghost-landlord",
+    name: "Ghost Landlord",
+    tag: "HAUNT · EVICT",
+    blurb: "You are the ghost. Scare tenants out with creaks, flickering lights and a haunted fan before they sign the lease.",
+    color: "#b26bff",
+    icon: "👻",
+  },
 ];
 
 export default function Lab() {
