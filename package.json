@@ -1,0 +1,31 @@
+{
+  "name": "weird-games",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Weird Games: a hub of odd little web games, starting with Query Arcade",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "postinstall": "node scripts/copy-wasm.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --no-warnings scripts/selftest.ts"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
+    "next": "^15.5.28",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "sql.js": "1.13.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/sql.js": "^1.4.11",
+    "postcss": "^8.5.31",
+    "tailwindcss": "^4.3.3",
+    "typescript": "5.9"
+  }
+}
