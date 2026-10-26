@@ -113,6 +113,14 @@ const LAB = [
     color: "#22f3ff",
     icon: "☁️",
   },
+  {
+    href: "/lab/power-cut",
+    name: "Power Cut",
+    tag: "MEMORY · IN THE DARK",
+    blurb: "The lights keep going out. Memorise the room in the flashes and reach the fuse box without stubbing a toe.",
+    color: "#ffe14d",
+    icon: "🔌",
+  },
 ];
 
 export default function Lab() {
