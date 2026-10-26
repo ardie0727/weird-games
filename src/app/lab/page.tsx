@@ -145,6 +145,14 @@ const LAB = [
     color: "#ffe14d",
     icon: "📯",
   },
+  {
+    href: "/lab/pressure-cooker",
+    name: "Pressure Cooker",
+    tag: "COUNT · KITCHEN",
+    blurb: "Mom said 4 whistles. Count them through the chaos and kill the gas on the right one.",
+    color: "#ff4d6d",
+    icon: "🍲",
+  },
 ];
 
 export default function Lab() {
