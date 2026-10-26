@@ -81,6 +81,14 @@ const LAB = [
     color: "#22f3ff",
     icon: "🦟",
   },
+  {
+    href: "/lab/queue-jumper",
+    name: "Queue Jumper",
+    tag: "SNEAK · DONT GET CAUGHT",
+    blurb: "Squeeze forward in a ticket queue while the aunty behind you is busy with her phone.",
+    color: "#ffe14d",
+    icon: "🧍",
+  },
 ];
 
 export default function Lab() {
