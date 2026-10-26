@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Press_Start_2P, VT323 } from "next/font/google";
+import { BootScreen } from "@/components/site/BootScreen";
 import "./globals.css";
 
 const press = Press_Start_2P({ weight: "400", subsets: ["latin"], variable: "--font-press", display: "swap" });
@@ -21,8 +22,14 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${press.variable} ${vt.variable} ${mono.variable}`}>
-      <body className="min-h-dvh antialiased">{children}</body>
+    <html lang="en" className={`${press.variable} ${vt.variable} ${mono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `try{if(sessionStorage.getItem("wg-booted"))document.documentElement.classList.add("booted")}catch(e){}` }} />
+      </head>
+      <body className="min-h-dvh antialiased">
+        <BootScreen />
+        {children}
+      </body>
     </html>
   );
 }
