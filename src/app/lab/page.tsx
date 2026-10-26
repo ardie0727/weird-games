@@ -49,6 +49,14 @@ const LAB = [
     color: "#39ff88",
     icon: "🚦",
   },
+  {
+    href: "/lab/balloon-doctor",
+    name: "Balloon Doctor",
+    tag: "TILT · PATCH",
+    blurb: "A leaky balloon drifts up a cactus canyon. Tap holes to patch them and tilt to steer. Every leak is a tiny jet.",
+    color: "#ff2bd6",
+    icon: "🎈",
+  },
 ];
 
 export default function Lab() {
