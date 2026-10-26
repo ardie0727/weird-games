@@ -56,11 +56,12 @@ export default function Hub() {
                 <div className="mt-4 font-pixel text-[10px] text-yellow blink">▶ PLAY</div>
               </Link>
             ) : (
-              <div key={g.name} className="pixel-corners border-2 border-dashed border-line p-5 opacity-60">
+              // Secret door: the Coming Soon card quietly links to the unlisted lab, styled exactly like a plain card.
+              <Link key={g.name} href="/lab" prefetch={false} className="pixel-corners block cursor-default border-2 border-dashed border-line p-5 opacity-60">
                 <div className="text-4xl">{g.icon}</div>
                 <div className="mt-3 font-pixel text-[14px] text-dim">{g.name.toUpperCase()}</div>
                 <p className="mt-3 text-[19px] text-dim">{g.blurb}</p>
-              </div>
+              </Link>
             ),
           )}
         </div>
