@@ -41,6 +41,14 @@ const LAB = [
     color: "#8f89b8",
     icon: "🐦",
   },
+  {
+    href: "/lab/traffic-signal-god",
+    name: "Traffic Signal God",
+    tag: "TAP · JUNCTION",
+    blurb: "Flip the lights at a four-way junction. Avoid crashes and gridlock while auto-rickshaws ignore half your reds.",
+    color: "#39ff88",
+    icon: "🚦",
+  },
 ];
 
 export default function Lab() {
