@@ -19,6 +19,15 @@ const GAMES = [
     icon: "🦩",
     live: true,
   },
+  {
+    href: "/rubber-bullet-man",
+    name: "Rubber Bullet Man",
+    tag: "ARENA · TRICK SHOTS",
+    blurb: "Every bullet bounces, including back at you. Bank shots, chain kills and a Rubber King boss.",
+    color: "#ffe14d",
+    icon: "🔫",
+    live: true,
+  },
   { href: "#", name: "Coming soon", tag: "???", blurb: "Another weird game is on its way.", color: "#2a2350", icon: "❔", live: false },
 ];
 
