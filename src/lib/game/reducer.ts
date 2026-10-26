@@ -125,7 +125,11 @@ export function applyEvent(cfg: ModeConfig, rounds: Round[], prev: GameState, ev
     return s;
   }
   if (v.ok) {
-    if (ev.t - s.roundStart < cfg.minAnswerMs) return bad("Answer arrived faster than humanly possible.");
+    // Faster than a human could read and answer: ignored, so bots gain nothing.
+    if (ev.t - s.roundStart < cfg.minAnswerMs) {
+      s.feedback = { ok: false, error: true, reason: "Whoa, too fast! Read the question first.", round: s.i, t: ev.t };
+      return s;
+    }
     const dt = ev.t - s.roundStart;
     const speed = Math.round(cfg.speedPts * Math.max(0, 1 - dt / cfg.speedMs));
     const mult = comboMult(s.combo);

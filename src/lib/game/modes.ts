@@ -50,7 +50,7 @@ export const MODES: Record<ModeId, ModeConfig> = {
     wrongPenalty: 25,
     rounds: 6,
     skipLabel: "SKIP",
-    minAnswerMs: 2_500,
+    minAnswerMs: 2_000,
   },
   predict: {
     id: "predict",

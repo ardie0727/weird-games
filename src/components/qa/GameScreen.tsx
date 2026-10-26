@@ -180,7 +180,7 @@ export function GameScreen({ mode }: { mode: ModeId }) {
   // Test hook for automated browser tests. Only exists in `next dev`.
   useEffect(() => {
     if (process.env.NODE_ENV !== "development" || !run) return;
-    (window as unknown as Record<string, unknown>).__qa = { run, state: stateRef };
+    (window as unknown as Record<string, unknown>).__qa = { run, state: stateRef, grade: (i: number, v: AnswerValue) => gradeAnswer(run.engine, run.rounds[i], v) };
   }, [run]);
 
   const t = () => Math.round(performance.now() - t0.current);
@@ -258,7 +258,8 @@ export function GameScreen({ mode }: { mode: ModeId }) {
   // phase === "play"
   const left = Math.max(0, deadline(cfg, state) - now);
   const pct = Math.min(100, (left / cfg.timeLimitMs) * 100);
-  const i = Math.min(state.i, run.rounds.length - 1);
+  // While a multiple-choice answer is being revealed, keep showing that round.
+  const i = reveal ? reveal.round : Math.min(state.i, run.rounds.length - 1);
   const round = run.rounds[i];
   const props: RoundProps<typeof round> = {
     round,

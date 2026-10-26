@@ -112,7 +112,7 @@ export function SqlView(p: RoundProps<SqlRound>) {
       {p.lastResult && p.feedback?.round === p.index && !p.feedback.ok && !p.feedback.error && <DataTable title="YOUR RESULT" columns={p.lastResult.columns} rows={p.lastResult.rows} compact max={8} highlight="#ff4d6d" />}
       <Actions p={p as RoundProps<Round>}>
         <NeonButton color="#22f3ff" size="sm" onClick={p.onShowTables}>
-          📋 Tables
+          📋<span className="hidden sm:inline"> Tables</span>
         </NeonButton>
         <NeonButton color="#39ff88" solid onClick={() => p.onAnswer(sql)} disabled={p.disabled}>
           Run ▶
@@ -150,6 +150,7 @@ export function ChoiceView(p: RoundProps<ChoiceRound> & { reveal: number | null 
               type="button"
               disabled={p.disabled || isElim || revealed}
               onClick={() => p.onAnswer(i)}
+              data-opt={i}
               className={cx("relative border-2 bg-black/40 p-2 text-left transition-transform active:scale-[0.99]", isElim && "opacity-25")}
               style={{ borderColor: color, boxShadow: revealed && right ? "0 0 16px rgba(57,255,136,.45)" : undefined }}
             >
@@ -265,6 +266,7 @@ export function PyFillView(p: RoundProps<PyFillRound>) {
             type="button"
             disabled={p.disabled}
             onClick={() => setPick(i)}
+            data-fill={i}
             className={cx("border-2 px-2 py-2 font-code text-[13px] active:translate-y-px", pick === i ? "border-green text-green" : "border-purple/60 text-purple")}
           >
             {o.trim()}
