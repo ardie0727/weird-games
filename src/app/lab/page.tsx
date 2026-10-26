@@ -25,6 +25,14 @@ const LAB = [
     color: "#39ff88",
     icon: "⏰",
   },
+  {
+    href: "/lab/sock-matcher",
+    name: "Sock Matcher",
+    tag: "PAIRS · PANIC",
+    blurb: "A washing machine spits socks onto the floor. Drag twins together before the pile buries you.",
+    color: "#ff2bd6",
+    icon: "🧦",
+  },
 ];
 
 export default function Lab() {
