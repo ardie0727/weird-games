@@ -310,7 +310,7 @@ export function RoundHeader({ round, index, total, color }: { round: Round; inde
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
-        <span className="font-pixel text-[9px]" style={{ color }}>
+        <span className="shrink-0 whitespace-nowrap font-pixel text-[9px]" style={{ color }}>
           {total ? `ROUND ${index + 1}/${total}` : `Q${index + 1}`}
         </span>
         {round.tag && <Tag color="#8f89b8">{round.tag}</Tag>}

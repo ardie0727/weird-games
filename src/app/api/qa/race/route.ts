@@ -22,7 +22,7 @@ interface Row {
   host_name: string;
   guest_id: string | null;
   guest_name: string | null;
-  started_at: string | null;
+  started_at: string | Date | null;
   wins: RaceWin[];
 }
 
@@ -33,7 +33,7 @@ function toState(row: Row, playerId: string | null): RaceState {
     day: row.day,
     host: row.host_name,
     guest: row.guest_name,
-    startedAt: row.started_at ? Date.parse(row.started_at) : null,
+    startedAt: row.started_at ? new Date(row.started_at).getTime() : null,
     serverNow: Date.now(),
     wins: row.wins,
     you: playerId === row.host_id ? "host" : playerId && playerId === row.guest_id ? "guest" : null,
@@ -106,7 +106,7 @@ export async function POST(req: Request) {
   if (action === "answer") {
     const slot = playerId === row.host_id ? "host" : playerId === row.guest_id ? "guest" : null;
     if (!slot) return err("You're not in this race.", 403);
-    const startedAt = row.started_at ? Date.parse(row.started_at) : null;
+    const startedAt = row.started_at ? new Date(row.started_at).getTime() : null;
     const now = Date.now();
     if (!startedAt || now < startedAt) return err("The race hasn't started.");
     if (now - startedAt > RACE_MAX_MS) return err("This race has timed out.");
