@@ -89,6 +89,14 @@ const LAB = [
     color: "#ffe14d",
     icon: "🧍",
   },
+  {
+    href: "/lab/tiffin-stack",
+    name: "Tiffin Stack",
+    tag: "STACK · BALANCE",
+    blurb: "Drop steel tiffin boxes onto a tower riding a wobbly scooter, and steer to keep it from toppling.",
+    color: "#ffe14d",
+    icon: "🛵",
+  },
 ];
 
 export default function Lab() {
