@@ -1,4 +1,4 @@
-import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
+import { neon, neonConfig, type NeonQueryFunction } from "@neondatabase/serverless";
 
 type Sql = NeonQueryFunction<false, false>;
 
@@ -9,6 +9,8 @@ let ready: Promise<void> | null = null;
 export function getDb(): Sql | null {
   const url = process.env.DATABASE_URL;
   if (!url) return null;
+  // Local testing only: route queries to a Neon-compatible HTTP endpoint (e.g. a shim over local Postgres).
+  if (process.env.NEON_FETCH_ENDPOINT) neonConfig.fetchEndpoint = process.env.NEON_FETCH_ENDPOINT;
   if (!client) client = neon(url);
   return client;
 }
