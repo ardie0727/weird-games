@@ -137,6 +137,14 @@ const LAB = [
     color: "#ff8a3d",
     icon: "🐒",
   },
+  {
+    href: "/lab/honk-orchestra",
+    name: "Honk Orchestra",
+    tag: "RHYTHM · HORNS",
+    blurb: "Stuck in traffic. Play the tune with car horns before the jam loses its mind.",
+    color: "#ffe14d",
+    icon: "📯",
+  },
 ];
 
 export default function Lab() {
