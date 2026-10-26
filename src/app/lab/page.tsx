@@ -65,6 +65,14 @@ const LAB = [
     color: "#ffe14d",
     icon: "🍱",
   },
+  {
+    href: "/lab/fridge-tetris",
+    name: "Fridge Tetris",
+    tag: "FIT · BEFORE IT SHUTS",
+    blurb: "Squeeze oddly shaped leftovers into the fridge, around shelves and mystery jars, before the door swings shut.",
+    color: "#22f3ff",
+    icon: "🧊",
+  },
 ];
 
 export default function Lab() {
