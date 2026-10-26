@@ -63,3 +63,36 @@ export function ensureSchema(sql: Sql): Promise<void> {
   }
   return ready;
 }
+
+let dwReady: Promise<void> | null = null;
+
+/** Tables for Daily Weird Guess: one guess per player per day, and each player's streak. */
+export function ensureDailySchema(sql: Sql): Promise<void> {
+  if (!dwReady) {
+    dwReady = (async () => {
+      await sql`CREATE TABLE IF NOT EXISTS dw_players (
+        id uuid PRIMARY KEY,
+        name text NOT NULL,
+        streak int NOT NULL DEFAULT 0,
+        best_streak int NOT NULL DEFAULT 0,
+        last_day date,
+        last_correct_day date,
+        played int NOT NULL DEFAULT 0,
+        wins int NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`;
+      await sql`CREATE TABLE IF NOT EXISTS dw_guesses (
+        player_id uuid NOT NULL,
+        day date NOT NULL,
+        pick smallint NOT NULL,
+        correct boolean NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (player_id, day)
+      )`;
+      await sql`CREATE INDEX IF NOT EXISTS dw_guesses_day ON dw_guesses (day)`;
+      await sql`CREATE INDEX IF NOT EXISTS dw_players_streak ON dw_players (streak DESC)`;
+    })();
+    dwReady.catch(() => (dwReady = null));
+  }
+  return dwReady;
+}

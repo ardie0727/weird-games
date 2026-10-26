@@ -4,6 +4,9 @@ Odd little browser games. The first one is **Query Arcade**: a fast, retro arcad
 
 - `/` is the Weird Games hub.
 - `/query-arcade` is Query Arcade (attract screen, 7 modes, high scores, player profile).
+- `/daily-weird` is Daily Weird Guess: one absurd fact a day (midnight IST), two choices, a streak
+  and a streak board. Facts live server-side in `src/lib/daily/facts.ts`, so the answer only reaches
+  the browser after a guess. One guess per player per day (`dw_players`, `dw_guesses`).
 
 ## Query Arcade in one minute
 

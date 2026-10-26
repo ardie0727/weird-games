@@ -10,6 +10,15 @@ const GAMES = [
     icon: "🕹️",
     live: true,
   },
+  {
+    href: "/daily-weird",
+    name: "Daily Weird Guess",
+    tag: "1 FACT · 2 CHOICES · DAILY",
+    blurb: "One absurd fact a day and two answers. Guess right to keep your streak alive and climb the streak board.",
+    color: "#22f3ff",
+    icon: "🦩",
+    live: true,
+  },
   { href: "#", name: "Coming soon", tag: "???", blurb: "Another weird game is on its way.", color: "#2a2350", icon: "❔", live: false },
 ];
 
