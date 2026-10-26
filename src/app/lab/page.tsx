@@ -33,6 +33,14 @@ const LAB = [
     color: "#ff2bd6",
     icon: "🧦",
   },
+  {
+    href: "/lab/pigeon-air-traffic",
+    name: "Pigeon Air Traffic",
+    tag: "DRAW · DON'T CRASH",
+    blurb: "Draw flight paths so pigeons land on the right part of the statue without flying into each other.",
+    color: "#8f89b8",
+    icon: "🐦",
+  },
 ];
 
 export default function Lab() {
