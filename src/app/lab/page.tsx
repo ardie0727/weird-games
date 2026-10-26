@@ -73,6 +73,14 @@ const LAB = [
     color: "#22f3ff",
     icon: "🧊",
   },
+  {
+    href: "/lab/mosquito-bat",
+    name: "Mosquito Bat",
+    tag: "SWING · ZAP",
+    blurb: "Swing an electric racket at mosquitoes diving for a sleeper. Every wave they get better at dodging.",
+    color: "#22f3ff",
+    icon: "🦟",
+  },
 ];
 
 export default function Lab() {
