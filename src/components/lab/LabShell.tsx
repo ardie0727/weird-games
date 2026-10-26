@@ -89,7 +89,12 @@ export function ctx2d(canvas: HTMLCanvasElement, w: number): CanvasRenderingCont
   return cx;
 }
 
-export const PIXEL_FONT = (px: number) => `${px}px var(--font-press), monospace`;
+let pixelFamily = "";
+/** Canvas font string for the arcade pixel font (canvas can't read CSS variables, so resolve it once). */
+export function PIXEL_FONT(px: number) {
+  if (!pixelFamily && typeof document !== "undefined") pixelFamily = getComputedStyle(document.documentElement).getPropertyValue("--font-press").trim();
+  return `${px}px ${pixelFamily || "monospace"}`;
+}
 
 /** Local best score with a setter that only ever raises it. Returns [best, submit] where submit reports a new best. */
 export function useBest(key: string): [number, (score: number) => boolean] {

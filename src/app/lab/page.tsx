@@ -57,6 +57,14 @@ const LAB = [
     color: "#ff2bd6",
     icon: "🎈",
   },
+  {
+    href: "/lab/dabbawala-rush",
+    name: "Dabbawala Rush",
+    tag: "SORT · TRAINS",
+    blurb: "Sort colour-coded tiffins onto the right local train before it pulls out. Lunch for the whole city depends on it.",
+    color: "#ffe14d",
+    icon: "🍱",
+  },
 ];
 
 export default function Lab() {

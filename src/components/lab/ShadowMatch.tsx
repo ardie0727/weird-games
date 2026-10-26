@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { load, save } from "@/lib/client/storage";
 import { blip, unlock } from "@/lib/lab/sound";
 import { MOVE_ROT, allOrientations, apply, axisAngle, makeLevel, matches, mul, type Level, type M3, type Move, type V3, type Wall } from "@/lib/lab/shadow";
-import { BigButton, LabShell, Overlay } from "./LabShell";
+import { BigButton, LabShell, Overlay, PIXEL_FONT } from "./LabShell";
 
 type Screen = "title" | "play" | "over";
 
@@ -344,10 +344,10 @@ export function ShadowMatch() {
 
       if (g.intro > 0 && screenRef.current === "play") {
         cx.textAlign = "center";
-        cx.font = "14px var(--font-press), monospace";
+        cx.font = PIXEL_FONT(14);
         cx.fillStyle = "#ffe14d";
         cx.fillText(`LEVEL ${level.n}`, W / 2, 40);
-        cx.font = "8px var(--font-press), monospace";
+        cx.font = PIXEL_FONT(8);
         cx.fillStyle = "#ece9ff";
         cx.fillText(`LIGHT ON: ${walls.map((w) => WALL_NAME[w]).join(" + ")}`, W / 2, 60);
       }

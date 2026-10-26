@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { load, save } from "@/lib/client/storage";
 import { blip, tone, unlock } from "@/lib/lab/sound";
 import { BOSS_TIME, CLOCK_R, EXCUSES, FURNITURE, H, W, WALL, dayRules, newGame, step, tap, type Clock, type Game, type Spot } from "@/lib/lab/snooze";
-import { BigButton, LabShell, Overlay } from "./LabShell";
+import { BigButton, LabShell, Overlay, PIXEL_FONT } from "./LabShell";
 
 type Screen = "title" | "play" | "over";
 
@@ -210,7 +210,7 @@ export function SnoozeButton() {
       cx.textBaseline = "middle";
       for (const p of pops.current) {
         cx.globalAlpha = 1 - p.t;
-        cx.font = "10px var(--font-press), monospace";
+        cx.font = PIXEL_FONT(10);
         cx.fillStyle = "#05040b";
         cx.fillText(p.text, p.x + 1, p.y - 26 - p.t * 30 + 1);
         cx.fillStyle = p.color;
@@ -222,10 +222,10 @@ export function SnoozeButton() {
       const banner = (a: string, b: string, col: string) => {
         cx.fillStyle = "rgba(5,4,11,0.75)";
         cx.fillRect(0, H / 2 - 44, W, 80);
-        cx.font = "16px var(--font-press), monospace";
+        cx.font = PIXEL_FONT(16);
         cx.fillStyle = col;
         cx.fillText(a, W / 2, H / 2 - 16);
-        cx.font = "8px var(--font-press), monospace";
+        cx.font = PIXEL_FONT(8);
         cx.fillStyle = "#ece9ff";
         cx.fillText(b, W / 2, H / 2 + 12);
       };
@@ -467,7 +467,7 @@ function drawClock(cx: CanvasRenderingContext2D, c: Clock, t: number, ringing: b
   cx.restore();
   if (asleep) {
     cx.fillStyle = "#39ff88";
-    cx.font = "10px var(--font-press), monospace";
+    cx.font = PIXEL_FONT(10);
     cx.fillText("z", c.x + 16, c.y - 22 - ((t * 20) % 10));
   }
 }
