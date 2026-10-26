@@ -153,6 +153,14 @@ const LAB = [
     color: "#ff4d6d",
     icon: "🍲",
   },
+  {
+    href: "/lab/head-wobble",
+    name: "Head Wobble",
+    tag: "MEMORY · UNCLE",
+    blurb: "Uncle answers in nods, shakes and wobbles. Swipe his answer back in the right order.",
+    color: "#ffe14d",
+    icon: "🙆",
+  },
 ];
 
 export default function Lab() {
