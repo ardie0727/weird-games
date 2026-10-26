@@ -121,6 +121,14 @@ const LAB = [
     color: "#ffe14d",
     icon: "🔌",
   },
+  {
+    href: "/lab/lost-slipper",
+    name: "Lost Slipper",
+    tag: "SEARCH · BEAT THE CLOCK",
+    blurb: "One slipper vanishes every morning. Dig through a messier house each day before you are late.",
+    color: "#ff8a3d",
+    icon: "🩴",
+  },
 ];
 
 export default function Lab() {
