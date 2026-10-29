@@ -4,7 +4,25 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isMuted, onMuteChange, setMuted } from "@/lib/client/sound";
 import { cleanName, getPlayer, load, save, setPlayerName } from "@/lib/client/storage";
-import { BULLETS, H, KINDS, MAX_HEARTS, W, enemyColor, newGame, predictPath, step, type BulletKind, type Game, type Input } from "@/lib/rbm/engine";
+import {
+  BLAST_R,
+  BULLETS,
+  H,
+  KINDS,
+  MAX_HEARTS,
+  MIRROR_ARC,
+  POWERS,
+  POWER_KINDS,
+  W,
+  enemyColor,
+  isBoss,
+  newGame,
+  predictPath,
+  step,
+  type BulletKind,
+  type Game,
+  type Input,
+} from "@/lib/rbm/engine";
 import { play, unlock } from "@/lib/rbm/sound";
 
 type Screen = "title" | "play" | "over";
@@ -329,12 +347,28 @@ export function RubberBulletMan() {
         cx.strokeRect(o.x + 1, o.y + 1, o.w - 2, o.h - 2);
       }
 
+      // pinball bumpers
+      for (const bp of g.bumpers) {
+        const lit = bp.flash > 0;
+        cx.fillStyle = lit ? "#ff2bd6" : "#2a0f3a";
+        cx.beginPath();
+        cx.arc(bp.x, bp.y, lit ? bp.r + 2 : bp.r, 0, Math.PI * 2);
+        cx.fill();
+        cx.strokeStyle = "#ff2bd6";
+        cx.lineWidth = 3;
+        cx.stroke();
+        cx.fillStyle = lit ? "#fff" : "#ff2bd6";
+        cx.beginPath();
+        cx.arc(bp.x, bp.y, bp.r * 0.35, 0, Math.PI * 2);
+        cx.fill();
+      }
+
       // spawn warnings
       for (const w of g.warnings) {
         if (Math.floor(w.t * 10) % 2) continue;
         cx.strokeStyle = enemyColor(w.type);
         cx.lineWidth = 2;
-        const r = w.type === "boss" ? 30 : 12;
+        const r = isBoss(w.type) ? 30 : 12;
         cx.beginPath();
         cx.arc(w.x, w.y, r, 0, Math.PI * 2);
         cx.stroke();
@@ -350,7 +384,25 @@ export function RubberBulletMan() {
         if (pk.t > 6 && Math.floor(pk.t * 8) % 2) continue;
         const y = pk.y + Math.sin(pk.t * 5) * 2;
         if (pk.kind === "heart") drawHeart(cx, pk.x, y, 7, "#ff4d6d");
-        else {
+        else if (pk.kind === "shield" || pk.kind === "rapid" || pk.kind === "triple") {
+          const pw = POWERS[pk.kind];
+          cx.fillStyle = pw.color;
+          cx.globalAlpha = 0.25 + Math.sin(pk.t * 8) * 0.1;
+          cx.beginPath();
+          cx.arc(pk.x, y, 12, 0, Math.PI * 2);
+          cx.fill();
+          cx.globalAlpha = 1;
+          cx.strokeStyle = pw.color;
+          cx.lineWidth = 2;
+          cx.beginPath();
+          cx.arc(pk.x, y, 8, 0, Math.PI * 2);
+          cx.stroke();
+          cx.fillStyle = pw.color;
+          cx.font = font(8);
+          cx.textAlign = "center";
+          cx.textBaseline = "middle";
+          cx.fillText(pw.letter, pk.x + 0.5, y + 1);
+        } else {
           cx.fillStyle = BULLETS[pk.kind].color;
           cx.globalAlpha = 0.25;
           cx.beginPath();
@@ -411,6 +463,62 @@ export function RubberBulletMan() {
           cx.lineTo(e.x + 16, e.y - 38);
           cx.lineTo(e.x + 16, e.y - 24);
           cx.fill();
+        }
+        if (e.type === "queen") {
+          cx.fillStyle = "#ffe14d";
+          for (let i = -2; i <= 2; i++) {
+            cx.beginPath();
+            cx.arc(e.x + i * 7, e.y - 27 - (2 - Math.abs(i)) * 3, 3, 0, Math.PI * 2);
+            cx.fill();
+          }
+          // a bubble wand
+          cx.strokeStyle = "#ece9ff";
+          cx.lineWidth = 2;
+          cx.beginPath();
+          cx.moveTo(e.x + 24, e.y + 6);
+          cx.lineTo(e.x + 34, e.y - 10);
+          cx.stroke();
+          cx.beginPath();
+          cx.arc(e.x + 37, e.y - 15, 5, 0, Math.PI * 2);
+          cx.stroke();
+        }
+        if (e.type === "fuse") {
+          const lit = e.state === 1;
+          const tipX = e.x + 4, tipY = e.y - e.r - 6;
+          cx.strokeStyle = "#c9b38a";
+          cx.lineWidth = 2;
+          cx.beginPath();
+          cx.moveTo(e.x + 1, e.y - e.r + 1);
+          cx.quadraticCurveTo(e.x + 6, e.y - e.r - 2, tipX, tipY);
+          cx.stroke();
+          cx.fillStyle = Math.floor(t * 20) % 2 ? "#ffe14d" : "#ff8a3d";
+          cx.beginPath();
+          cx.arc(tipX, tipY, lit ? 3.5 : 2, 0, Math.PI * 2);
+          cx.fill();
+          if (lit) {
+            cx.strokeStyle = "rgba(255,77,109,0.7)";
+            cx.setLineDash([4, 4]);
+            cx.lineWidth = 1.5;
+            cx.beginPath();
+            cx.arc(e.x, e.y, BLAST_R, 0, Math.PI * 2);
+            cx.stroke();
+            cx.setLineDash([]);
+            if (Math.floor(e.t * 12) % 2) {
+              cx.fillStyle = "#ff4d6d";
+              cx.beginPath();
+              cx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+              cx.fill();
+            }
+          }
+        }
+        if (e.type === "mirror") {
+          cx.strokeStyle = e.frozen > 0 ? "#5a5480" : "#ffffff";
+          cx.lineWidth = 4;
+          cx.lineCap = "round";
+          cx.beginPath();
+          cx.arc(e.x, e.y, e.r + 5, e.face - MIRROR_ARC, e.face + MIRROR_ARC);
+          cx.stroke();
+          cx.lineCap = "butt";
         }
         // eyes follow you
         const a = Math.atan2(p.y - e.y, p.x - e.x);
@@ -473,7 +581,19 @@ export function RubberBulletMan() {
         cx.arc(b.x, b.y, b.r * 2, 0, Math.PI * 2);
         cx.fill();
         cx.globalAlpha = 1;
-        if (b.kind === "boomerang") {
+        if (b.kind === "bomb" && b.owner === "player") {
+          cx.fillStyle = "#1b1440";
+          cx.beginPath();
+          cx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+          cx.fill();
+          cx.strokeStyle = col;
+          cx.lineWidth = 2;
+          cx.stroke();
+          cx.fillStyle = Math.floor(b.age * 16) % 2 ? "#ffe14d" : "#ff4d6d";
+          cx.beginPath();
+          cx.arc(b.x, b.y, 2.5, 0, Math.PI * 2);
+          cx.fill();
+        } else if (b.kind === "boomerang") {
           cx.save();
           cx.translate(b.x, b.y);
           cx.rotate(b.age * 18);
@@ -525,6 +645,33 @@ export function RubberBulletMan() {
         for (const side of [-1, 1]) cx.fillRect(p.x + ax * 3 + side * -ay * 3.5 - 1.5, p.y + ay * 3 + side * ax * 3.5 + bob, 3, 3);
       }
 
+      for (const bl of g.blasts) {
+        const k = bl.t / 0.4;
+        cx.globalAlpha = 0.5 * (1 - k);
+        cx.fillStyle = "#ff8a3d";
+        cx.beginPath();
+        cx.arc(bl.x, bl.y, bl.r * (0.4 + k * 0.6), 0, Math.PI * 2);
+        cx.fill();
+        cx.globalAlpha = 1 - k;
+        cx.strokeStyle = "#ffe14d";
+        cx.lineWidth = 3;
+        cx.stroke();
+        cx.globalAlpha = 1;
+      }
+
+      if (!g.over && g.power.shield) {
+        cx.strokeStyle = POWERS.shield.color;
+        cx.globalAlpha = 0.55 + Math.sin(t * 6) * 0.2;
+        cx.lineWidth = 2;
+        cx.beginPath();
+        cx.arc(p.x, p.y, p.r + 7, 0, Math.PI * 2);
+        cx.stroke();
+        cx.globalAlpha = 0.12;
+        cx.fillStyle = POWERS.shield.color;
+        cx.fill();
+        cx.globalAlpha = 1;
+      }
+
       for (const pt of g.particles) {
         cx.globalAlpha = 1 - pt.t / pt.life;
         cx.fillStyle = pt.color;
@@ -556,6 +703,20 @@ export function RubberBulletMan() {
         cx.font = font(8);
         cx.fillText(`WAVE ${Math.max(1, g.wave)}`, W / 2, 12);
         for (let i = 0; i < MAX_HEARTS; i++) drawHeart(cx, W - 16 - i * 18, 16, 6, i < g.hearts ? "#ff4d6d" : "#2a2350");
+        // active power-ups, under the score
+        cx.font = font(7);
+        cx.textAlign = "left";
+        let px = 10;
+        for (const k of POWER_KINDS) {
+          const on = k === "shield" ? g.power.shield : g.power[k] > 0;
+          if (!on) continue;
+          const left = k === "shield" ? 0 : g.power[k];
+          if (left > 0 && left < 2 && Math.floor(left * 8) % 2) continue;
+          const label = k === "shield" ? POWERS[k].name.toUpperCase() : `${POWERS[k].name.toUpperCase()} ${Math.ceil(left)}`;
+          cx.fillStyle = POWERS[k].color;
+          cx.fillText(label, px, 26);
+          px += cx.measureText(label).width + 8;
+        }
       }
       if (g.banner && screenRef.current === "play") {
         cx.textAlign = "center";
@@ -657,7 +818,7 @@ export function RubberBulletMan() {
         )}
       </div>
 
-      <nav className="grid h-16 shrink-0 grid-cols-5 gap-1 px-2 pb-1" aria-label="Bullets">
+      <nav className="grid h-16 shrink-0 grid-cols-7 gap-1 px-2 pb-1" aria-label="Bullets">
         {KINDS.map((k, i) => {
           const n = hud.ammo[k];
           const on = hud.selected === k;
@@ -676,7 +837,7 @@ export function RubberBulletMan() {
               title={`${info.name} (${i + 1}): ${info.desc}`}
             >
               <span className="block h-3 w-3 rounded-full" style={{ background: info.color }} />
-              <span className="mt-1 font-pixel text-[6.5px] sm:text-[8px]" style={{ color: on ? info.color : "#8f89b8" }}>
+              <span className="mt-1 font-pixel text-[5.5px] sm:text-[8px]" style={{ color: on ? info.color : "#8f89b8" }}>
                 {info.name.toUpperCase()}
               </span>
               <span className="font-pixel text-[7px] text-ink">{n === Infinity ? "∞" : n}</span>
@@ -749,11 +910,24 @@ function Title({ best, onPlay }: { best: number; onPlay: () => void }) {
               on the right snaps a shot at the nearest enemy.
             </p>
             <p className="mt-1">
-              <b className="font-normal text-cyan">Keyboard:</b> WASD to move, mouse to aim, click to shoot, 1-5 or Q/E to switch bullets.
+              <b className="font-normal text-cyan">Keyboard:</b> WASD to move, mouse to aim, click to shoot, 1-7 or Q/E to switch bullets.
             </p>
             <p className="mt-1">
               Once your bullet has bounced, it can hit <i>you</i>. Kill several enemies with one bullet for a chain multiplier, and off a wall for a bank-shot
-              bonus.
+              bonus. Pink bumpers speed your bullets up for free.
+            </p>
+            <p className="mt-1">
+              <b className="font-normal text-cyan">Power-ups:</b>{" "}
+              {POWER_KINDS.map((k, i) => (
+                <span key={k}>
+                  {i > 0 && " "}
+                  <span style={{ color: POWERS[k].color }}>{POWERS[k].name}</span>: {POWERS[k].desc}
+                </span>
+              ))}
+            </p>
+            <p className="mt-1">
+              <b className="font-normal text-cyan">Watch out for:</b> Fuses that light up and blow up next to you, Mirrors that bounce shots off their shield
+              (hit them from behind, glue them, or use a Piercer or Bomb), and a new boss, the Bubble Queen, on wave 10.
             </p>
           </div>
         </>
