@@ -137,6 +137,14 @@ const LAB = [
     color: "#ff2bd6",
     icon: "☂️",
   },
+  {
+    href: "/lab/wedding-crasher",
+    name: "Wedding Crasher",
+    tag: "SNEAK · BUFFET",
+    blurb: "Raid every counter at a big fat wedding and slip out before an uncle asks what you do.",
+    color: "#ffe14d",
+    icon: "💍",
+  },
 ];
 
 export default function Lab() {
