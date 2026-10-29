@@ -129,6 +129,14 @@ const LAB = [
     color: "#ffe14d",
     icon: "🛺",
   },
+  {
+    href: "/lab/umbrella-dash",
+    name: "Umbrella Dash",
+    tag: "TILT · MONSOON",
+    blurb: "Sideways monsoon rain and a paper bag of groceries. Point the umbrella into the wind and dodge taxi splashes.",
+    color: "#ff2bd6",
+    icon: "☂️",
+  },
 ];
 
 export default function Lab() {
