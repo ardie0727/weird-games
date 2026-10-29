@@ -113,6 +113,14 @@ const LAB = [
     color: "#ff8a3d",
     icon: "🐈",
   },
+  {
+    href: "/lab/chai-spill",
+    name: "Chai Spill",
+    tag: "STEER · DON'T SPILL",
+    blurb: "Carry a tray of brim-full chai through the office to the boss. Every jerk, desk and colleague sloshes some out.",
+    color: "#ff8a3d",
+    icon: "☕",
+  },
 ];
 
 export default function Lab() {
