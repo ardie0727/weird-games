@@ -145,6 +145,14 @@ const LAB = [
     color: "#ffe14d",
     icon: "💍",
   },
+  {
+    href: "/lab/kite-cutter",
+    name: "Kite Cutter",
+    tag: "FLY · CUT THE MANJA",
+    blurb: "Makar Sankranti kite fight. Cross strings with rival kites and pull hard to cut them before they cut yours.",
+    color: "#22f3ff",
+    icon: "🪁",
+  },
 ];
 
 export default function Lab() {
