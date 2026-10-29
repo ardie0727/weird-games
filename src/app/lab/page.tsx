@@ -153,6 +153,14 @@ const LAB = [
     color: "#22f3ff",
     icon: "🪁",
   },
+  {
+    href: "/lab/escalator-panic",
+    name: "Escalator Panic",
+    tag: "TAP · CROWD CONTROL",
+    blurb: "Sale day at the mall. Nudge scared shoppers on, frozen ones off, and catch the kid running up the down escalator.",
+    color: "#39ff88",
+    icon: "🏬",
+  },
 ];
 
 export default function Lab() {
