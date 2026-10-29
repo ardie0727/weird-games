@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isMuted, onMuteChange, setMuted } from "@/lib/client/sound";
 import { load, save } from "@/lib/client/storage";
 
-// Shared chrome for the in-development lab games: a top bar and an overlay card.
+// Shared chrome for the lab games: a top bar and an overlay card.
+// Games still under /lab go back to the lab; graduated ones go back to the hub.
 
 export function LabShell({ title, color, right, children }: { title: string; color: string; right?: React.ReactNode; children: React.ReactNode }) {
+  const inLab = usePathname()?.startsWith("/lab");
   const [muted, setMutedState] = useState(false);
   useEffect(() => {
     setMutedState(isMuted());
@@ -17,8 +20,8 @@ export function LabShell({ title, color, right, children }: { title: string; col
   return (
     <div className="fixed inset-0 flex select-none flex-col bg-bg" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
       <header className="flex h-11 shrink-0 items-center justify-between gap-2 px-3">
-        <Link href="/lab" className="font-pixel text-[9px] text-dim hover:text-ink">
-          ◀ LAB
+        <Link href={inLab ? "/lab" : "/"} className="font-pixel text-[9px] text-dim hover:text-ink">
+          {inLab ? "◀ LAB" : "◀ HUB"}
         </Link>
         <div className="truncate font-pixel text-[9px] neon-soft" style={{ color }}>
           {title}

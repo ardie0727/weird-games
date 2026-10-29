@@ -2,22 +2,6 @@ import Link from "next/link";
 
 const LAB = [
   {
-    href: "/lab/shadow-match",
-    name: "Shadow Match",
-    tag: "PUZZLE · 3D",
-    blurb: "A lamp throws a strange object's shadow on the wall. Turn it until the shadow fills the outline. The light keeps moving.",
-    color: "#22f3ff",
-    icon: "🔦",
-  },
-  {
-    href: "/lab/elevator-of-doom",
-    name: "Elevator of Doom",
-    tag: "TAP · CHAOS",
-    blurb: "Run the lift for impatient suits, slow grannies, mind-changing clowns and a toddler who presses every button.",
-    color: "#ff8a3d",
-    icon: "🛗",
-  },
-  {
     href: "/lab/snooze-button",
     name: "Snooze Button",
     tag: "CATCH · REFLEX",
@@ -34,44 +18,12 @@ const LAB = [
     icon: "🧦",
   },
   {
-    href: "/lab/pigeon-air-traffic",
-    name: "Pigeon Air Traffic",
-    tag: "DRAW · DON'T CRASH",
-    blurb: "Draw flight paths so pigeons land on the right part of the statue without flying into each other.",
-    color: "#8f89b8",
-    icon: "🐦",
-  },
-  {
     href: "/lab/traffic-signal-god",
     name: "Traffic Signal God",
     tag: "TAP · JUNCTION",
     blurb: "Flip the lights at a four-way junction. Avoid crashes and gridlock while auto-rickshaws ignore half your reds.",
     color: "#39ff88",
     icon: "🚦",
-  },
-  {
-    href: "/lab/balloon-doctor",
-    name: "Balloon Doctor",
-    tag: "TILT · PATCH",
-    blurb: "A leaky balloon drifts up a cactus canyon. Tap holes to patch them and tilt to steer. Every leak is a tiny jet.",
-    color: "#ff2bd6",
-    icon: "🎈",
-  },
-  {
-    href: "/lab/dabbawala-rush",
-    name: "Dabbawala Rush",
-    tag: "SORT · TRAINS",
-    blurb: "Sort colour-coded tiffins onto the right local train before it pulls out. Lunch for the whole city depends on it.",
-    color: "#ffe14d",
-    icon: "🍱",
-  },
-  {
-    href: "/lab/fridge-tetris",
-    name: "Fridge Tetris",
-    tag: "FIT · BEFORE IT SHUTS",
-    blurb: "Squeeze oddly shaped leftovers into the fridge, around shelves and mystery jars, before the door swings shut.",
-    color: "#22f3ff",
-    icon: "🧊",
   },
   {
     href: "/lab/mosquito-bat",
@@ -88,14 +40,6 @@ const LAB = [
     blurb: "Squeeze forward in a ticket queue while the aunty behind you is busy with her phone.",
     color: "#ffe14d",
     icon: "🧍",
-  },
-  {
-    href: "/lab/tiffin-stack",
-    name: "Tiffin Stack",
-    tag: "STACK · BALANCE",
-    blurb: "Drop steel tiffin boxes onto a tower riding a wobbly scooter, and steer to keep it from toppling.",
-    color: "#ffe14d",
-    icon: "🛵",
   },
   {
     href: "/lab/ghost-landlord",

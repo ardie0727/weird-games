@@ -11,6 +11,14 @@ const nextConfig = {
     }
     return config;
   },
+  // Games that graduated from the lab keep working at their old /lab links.
+  async redirects() {
+    return ["shadow-match", "elevator-of-doom", "pigeon-air-traffic", "balloon-doctor", "dabbawala-rush", "fridge-tetris", "tiffin-stack"].map((slug) => ({
+      source: `/lab/${slug}`,
+      destination: `/${slug}`,
+      permanent: true,
+    }));
+  },
   async headers() {
     return [
       {
