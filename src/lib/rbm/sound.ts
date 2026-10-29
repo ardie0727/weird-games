@@ -72,6 +72,19 @@ export function play(s: Sound) {
       case "freeze":
         tone(1400, 0, 0.25, "sine", 0.05, 500);
         break;
+      case "boom":
+        tone(160, 0, 0.35, "sawtooth", 0.08, 40);
+        tone(90, 0.02, 0.3, "square", 0.05, 30);
+        break;
+      case "boing":
+        tone(420, 0, 0.12, "sine", 0.09, 1200);
+        break;
+      case "power":
+        [523, 784, 1046, 1568].forEach((f, i) => tone(f, i * 0.04, 0.07, "triangle", 0.07));
+        break;
+      case "shield":
+        tone(900, 0, 0.18, "sine", 0.08, 300);
+        break;
       case "wave":
         [392, 523, 659].forEach((f, i) => tone(f, i * 0.08, 0.12, "square", 0.045));
         break;
