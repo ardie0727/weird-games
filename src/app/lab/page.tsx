@@ -121,6 +121,14 @@ const LAB = [
     color: "#ff8a3d",
     icon: "☕",
   },
+  {
+    href: "/lab/auto-haggler",
+    name: "Auto Haggler",
+    tag: "BARGAIN · READ THE FACE",
+    blurb: "Every rickshaw driver quotes double. Read his mood and haggle it down before he drives off.",
+    color: "#ffe14d",
+    icon: "🛺",
+  },
 ];
 
 export default function Lab() {
