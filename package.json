@@ -9,7 +9,8 @@
     "start": "next start",
     "postinstall": "node scripts/copy-wasm.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --no-warnings scripts/selftest.ts"
+    "test": "node --experimental-strip-types --no-warnings scripts/selftest.ts",
+    "test:dtc": "node --experimental-strip-types --no-warnings scripts/dtc-sim.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",

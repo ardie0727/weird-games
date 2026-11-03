@@ -29,6 +29,15 @@ const GAMES = [
     live: true,
   },
   {
+    href: "/down-the-couch",
+    name: "Down the Couch",
+    tag: "ROGUELITE · CARD RPG",
+    blurb: "You fell into the sofa. Fight dust bunnies, a furious TV remote and the Vacuum itself in a roguelite card RPG.",
+    color: "#ff8a3d",
+    icon: "🛋️",
+    live: true,
+  },
+  {
     href: "/shadow-match",
     name: "Shadow Match",
     tag: "PUZZLE · 3D",

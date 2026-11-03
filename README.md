@@ -9,6 +9,9 @@ Odd little browser games. The first one is **Query Arcade**: a fast, retro arcad
   the browser after a guess. One guess per player per day (`dw_players`, `dw_guesses`).
 - `/rubber-bullet-man` is Rubber Bullet Man: a canvas arena shooter where every bullet bounces, including
   back at you. Five bullet types, waves with a boss every fifth wave, and a daily/all-time board (`rbm_scores`).
+- `/down-the-couch` is Down the Couch: a roguelite card RPG. Four heroes, four areas with bosses, a branching map,
+  shops, campfires, events, trinkets and level-ups. Runs and Junk Drawer upgrades save in the browser (no server).
+  `npm run test:dtc` plays hundreds of bot runs to catch stuck states and check balance.
 
 ## Query Arcade in one minute
 
