@@ -5,27 +5,36 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isMuted, onMuteChange, setMuted } from "@/lib/client/sound";
 import { cleanName, getPlayer, load, save, setPlayerName } from "@/lib/client/storage";
 import {
-  BLAST_R,
+  BRAWL_TARGET,
   BULLETS,
   H,
   KINDS,
-  MAX_HEARTS,
-  MIRROR_ARC,
+  MAX_PLAYERS,
+  PLAYER_COLORS,
   POWERS,
   POWER_KINDS,
   W,
-  enemyColor,
-  isBoss,
+  addPlayer,
+  movePlayer,
   newGame,
-  predictPath,
+  removePlayer,
   step,
   type BulletKind,
+  type Fx,
   type Game,
   type Input,
+  type Mode,
+  type Player,
+  type Seat,
+  type Sound,
 } from "@/lib/rbm/engine";
+import { INPUT_MS, Mirror, PROTOCOL, SNAP_MS, cleanCode, encodeSnap, type GuestMsg, type HostMsg, type LobbySeat } from "@/lib/rbm/net";
+import { joinRoom, NetError, Room, type Link as NetLink } from "@/lib/rbm/rtc";
 import { play, unlock } from "@/lib/rbm/sound";
+import { DEAD, STICK, drawGame, type Stick } from "./draw";
 
-type Screen = "title" | "play" | "over";
+type Screen = "title" | "friends" | "connecting" | "lobby" | "play" | "over";
+type Role = "solo" | "host" | "guest";
 
 interface Result {
   score: number;
@@ -36,6 +45,26 @@ interface Result {
   best: boolean;
 }
 
+interface Standing {
+  name: string;
+  color: string;
+  me: boolean;
+  bot: boolean;
+  points: number;
+  kos: number;
+  falls: number;
+  score: number;
+  kills: number;
+}
+
+interface MultiResult {
+  mode: Mode;
+  standings: Standing[];
+  winner: string | null;
+  wave: number;
+  score: number;
+}
+
 interface Row {
   name: string;
   score: number;
@@ -43,32 +72,50 @@ interface Row {
   kills: number;
 }
 
-interface Stick {
-  id: number | null;
-  ox: number;
-  oy: number;
-  x: number;
-  y: number;
-  t0: number;
+/** A friend connected to the room this browser hosts. */
+interface Guest {
+  key: number;
+  name: string;
+  link: NetLink;
+  pid: number | null;
+  input: Input | null;
+  heard: number;
 }
 
-const STICK = 46; // css px for a full push
-const DEAD = 12;
+interface LobbyView {
+  code: string;
+  seats: LobbySeat[];
+  mode: Mode;
+  you: number;
+  online: boolean;
+}
+
+const BOT_NAMES = ["BOINGO", "RUBBERT", "SQUISHY"];
 
 const newStick = (): Stick => ({ id: null, ox: 0, oy: 0, x: 0, y: 0, t0: 0 });
 
 export function RubberBulletMan() {
-  const [screen, setScreen] = useState<Screen>("title");
+  const [screen, setScreenState] = useState<Screen>("title");
+  const [role, setRoleState] = useState<Role>("solo");
   const [paused, setPaused] = useState(false);
   const [muted, setMutedState] = useState(false);
-  const [hud, setHud] = useState<{ selected: BulletKind; ammo: Record<BulletKind, number> }>({ selected: "bouncer", ammo: newGame().ammo });
+  const [hud, setHud] = useState<{ selected: BulletKind; ammo: Record<BulletKind, number> }>(() => ({ selected: "bouncer", ammo: newGame().players[0].ammo }));
   const [result, setResult] = useState<Result | null>(null);
+  const [multi, setMulti] = useState<MultiResult | null>(null);
   const [best, setBest] = useState(0);
+  const [lobby, setLobby] = useState<LobbyView | null>(null);
+  const [bots, setBotsState] = useState(0);
+  const [netMsg, setNetMsg] = useState("");
+  const [joinCode, setJoinCode] = useState("");
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const gameRef = useRef<Game>(newGame());
+  const gameRef = useRef<Game>(null as unknown as Game);
+  if (!gameRef.current) gameRef.current = newGame();
+  // the player this screen controls (a fresh game's first player has id 1)
+  const meRef = useRef<number>(1);
   const screenRef = useRef<Screen>("title");
+  const roleRef = useRef<Role>("solo");
   const pausedRef = useRef(false);
   const scaleRef = useRef(1);
   const ctl = useRef({
@@ -76,36 +123,362 @@ export function RubberBulletMan() {
     move: newStick(),
     aim: newStick(),
     mouse: { x: 0, y: 0, down: false, active: false },
-    pending: null as { x: number; y: number; t: number } | null,
+    pending: null as { x: number; y: number; t: number; sent: boolean } | null,
   });
+  // hosting
+  const roomRef = useRef<Room | null>(null);
+  const guestsRef = useRef<Guest[]>([]);
+  const nextKey = useRef(1);
+  const hostMode = useRef<Mode>("coop");
+  const botsRef = useRef(0);
+  const outbox = useRef<{ fx: Fx[]; sounds: Sound[]; n: number; last: number }>({ fx: [], sounds: [], n: 0, last: 0 });
+  // joining
+  const linkRef = useRef<NetLink | null>(null);
+  const mirrorRef = useRef<Mirror | null>(null);
+  const guestCtl = useRef({ shots: 0, sel: null as BulletKind | null, selSends: 0, lastSend: 0, lobby: null as LobbyView | null });
+  const joinCancel = useRef({ cancelled: false });
+
+  const setScreen = useCallback((s: Screen) => {
+    screenRef.current = s;
+    setScreenState(s);
+  }, []);
+  const setRole = useCallback((r: Role) => {
+    roleRef.current = r;
+    setRoleState(r);
+  }, []);
+  const setBots = useCallback((n: number) => {
+    botsRef.current = n;
+    setBotsState(n);
+  }, []);
+
+  const myName = () => getPlayer().name || "YOU";
 
   useEffect(() => {
     setBest(load<number>("rbm.best", 0));
     setMutedState(isMuted());
     const off = onMuteChange(setMutedState);
+    // a shared invite link: /rubber-bullet-man?room=ABCD
+    const code = cleanCode(new URLSearchParams(window.location.search).get("room") ?? "");
+    if (code.length === 4) {
+      setJoinCode(code);
+      setScreen("friends");
+    }
     return () => void off();
-  }, []);
+  }, [setScreen]);
 
   const setPause = useCallback((p: boolean) => {
     pausedRef.current = p;
     setPaused(p);
   }, []);
 
-  const start = useCallback(() => {
+  const resetControls = () => {
+    const c = ctl.current;
+    c.pending = null;
+    c.move = newStick();
+    c.aim = newStick();
+  };
+
+  const me = (): Player | null => gameRef.current.players.find((p) => p.id === meRef.current) ?? null;
+
+  // ---------- leaving / cleanup ----------
+
+  const leaveNet = useCallback(() => {
+    const room = roomRef.current;
+    roomRef.current = null;
+    for (const gu of guestsRef.current) {
+      gu.link.onClose = () => {};
+      gu.link.send({ t: "bye" } satisfies HostMsg);
+      setTimeout(() => gu.link.close(), 100);
+    }
+    guestsRef.current = [];
+    room?.close();
+    const link = linkRef.current;
+    linkRef.current = null;
+    if (link) {
+      link.onClose = () => {};
+      link.send({ t: "bye" } satisfies GuestMsg);
+      setTimeout(() => link.close(), 100);
+    }
+    mirrorRef.current = null;
+    joinCancel.current.cancelled = true;
+  }, []);
+
+  useEffect(() => {
+    const bye = () => leaveNet();
+    window.addEventListener("pagehide", bye);
+    return () => {
+      window.removeEventListener("pagehide", bye);
+      leaveNet();
+    };
+  }, [leaveNet]);
+
+  const toTitle = useCallback(
+    (msg = "") => {
+      leaveNet();
+      setRole("solo");
+      gameRef.current = newGame();
+      meRef.current = gameRef.current.players[0].id;
+      setLobby(null);
+      setPause(false);
+      setNetMsg(msg);
+      setScreen(msg ? "friends" : "title");
+    },
+    [leaveNet, setPause, setRole, setScreen],
+  );
+
+  // ---------- solo ----------
+
+  const startSolo = useCallback(
+    (mode: "classic" | "brawl" = "classic", botCount = 0) => {
+      unlock();
+      leaveNet();
+      setRole("solo");
+      const seats: Seat[] = [{ name: myName() }];
+      for (let i = 0; i < botCount; i++) seats.push({ name: BOT_NAMES[i], bot: true });
+      gameRef.current = mode === "classic" ? newGame() : newGame("brawl", seats);
+      meRef.current = gameRef.current.players[0].id;
+      resetControls();
+      setResult(null);
+      setMulti(null);
+      setPause(false);
+      setScreen("play");
+    },
+    [leaveNet, setPause, setRole, setScreen],
+  );
+
+  // ---------- hosting ----------
+
+  const lobbySeats = (): LobbySeat[] => {
+    const seats: LobbySeat[] = [{ name: myName(), bot: false }, ...guestsRef.current.map((gu) => ({ name: gu.name, bot: false }))];
+    if (hostMode.current === "brawl") for (let i = 0; i < botsRef.current; i++) seats.push({ name: BOT_NAMES[i], bot: true });
+    return seats;
+  };
+
+  const broadcastLobby = () => {
+    const room = roomRef.current;
+    if (!room) return;
+    const seats = lobbySeats();
+    setLobby({ code: room.code, seats, mode: hostMode.current, you: 0, online: room.online });
+    guestsRef.current.forEach((gu, i) => gu.link.send({ t: "lobby", seats, mode: hostMode.current, you: i + 1 } satisfies HostMsg));
+  };
+
+  const fitBots = () => {
+    const room = 4 - 1 - guestsRef.current.length;
+    if (botsRef.current > room) setBots(Math.max(0, room));
+  };
+
+  const dropGuest = (gu: Guest) => {
+    guestsRef.current = guestsRef.current.filter((x) => x !== gu);
+    const g = gameRef.current;
+    if (gu.pid !== null && roleRef.current === "host") {
+      const p = g.players.find((x) => x.id === gu.pid);
+      if (p && !g.over) {
+        removePlayer(g, gu.pid);
+        // shown on everyone's screen through the next snapshot
+        g.pops.push({ x: p.x, y: p.y - 18, text: `${p.name} LEFT`, color: p.color, t: 0 });
+        g.fx?.push({ k: "p", x: p.x, y: p.y - 18, text: `${p.name} LEFT`, c: p.color });
+      }
+    }
+    broadcastLobby();
+  };
+
+  const onGuestMsg = (gu: Guest, msg: GuestMsg) => {
+    gu.heard = performance.now();
+    if (msg.t === "i") {
+      gu.input = {
+        moveX: +msg.mx || 0,
+        moveY: +msg.my || 0,
+        aimX: +msg.ax || 0,
+        aimY: +msg.ay || 0,
+        fire: msg.f === 1,
+        shots: +msg.sh || 0,
+        select: msg.sel >= 0 ? KINDS[msg.sel] : undefined,
+        pos: Number.isFinite(msg.x) && Number.isFinite(msg.y) ? { x: msg.x, y: msg.y, walk: +msg.w || 0 } : undefined,
+        tp: +msg.tp,
+      };
+    } else if (msg.t === "hi") {
+      if (msg.v !== PROTOCOL) {
+        gu.link.send({ t: "full" } satisfies HostMsg);
+        return;
+      }
+      const n = cleanName(String(msg.name ?? ""));
+      if (n.length >= 2) gu.name = n;
+      fitBots();
+      broadcastLobby();
+      // drop straight into a game that's already going
+      const g = gameRef.current;
+      if (screenRef.current === "play" && !g.over) {
+        if (hostMode.current === "brawl" && g.players.length >= MAX_PLAYERS) {
+          const bot = g.players.find((p) => p.bot);
+          if (bot) removePlayer(g, bot.id);
+        }
+        const p = addPlayer(g, { name: gu.name });
+        if (p) {
+          gu.pid = p.id;
+          gu.link.send({ t: "go", mode: g.mode, you: p.id } satisfies HostMsg);
+        }
+      }
+    } else if (msg.t === "bye") gu.link.close();
+  };
+
+  const hostRoom = useCallback(async () => {
     unlock();
-    gameRef.current = newGame();
-    ctl.current.pending = null;
-    ctl.current.move = newStick();
-    ctl.current.aim = newStick();
-    screenRef.current = "play";
-    setScreen("play");
+    leaveNet();
+    setNetMsg("");
+    setRole("host");
+    hostMode.current = "coop";
+    setBots(0);
+    const room = new Room();
+    roomRef.current = room;
+    room.accepting = () => guestsRef.current.length < MAX_PLAYERS - 1;
+    room.onError = (m) => setNetMsg(m);
+    room.onLink = (link, name) => {
+      if (roomRef.current !== room) return link.close();
+      if (!room.accepting()) {
+        link.send({ t: "full" } satisfies HostMsg);
+        setTimeout(() => link.close(), 300);
+        return;
+      }
+      const gu: Guest = { key: nextKey.current++, name: cleanName(name) || "FRIEND", link, pid: null, input: null, heard: performance.now() };
+      guestsRef.current.push(gu);
+      link.onMessage = (m) => onGuestMsg(gu, m as GuestMsg);
+      link.onClose = () => dropGuest(gu);
+      play("pickup");
+    };
+    setScreen("connecting");
+    try {
+      await room.open();
+    } catch (e) {
+      if (roomRef.current === room) toTitle(e instanceof Error ? e.message : "Couldn't open a room.");
+      return;
+    }
+    if (roomRef.current !== room) return;
+    setScreen("lobby");
+    broadcastLobby();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaveNet, setBots, setRole, setScreen, toTitle]);
+
+  const setHostMode = (m: Mode) => {
+    hostMode.current = m;
+    if (m === "brawl" && guestsRef.current.length === 0 && botsRef.current === 0) setBots(1);
+    broadcastLobby();
+  };
+
+  const changeBots = (d: number) => {
+    setBots(Math.max(0, Math.min(MAX_PLAYERS - 1 - guestsRef.current.length, botsRef.current + d)));
+    broadcastLobby();
+  };
+
+  const startOnline = useCallback(() => {
+    unlock();
+    const mode = hostMode.current;
+    const guests = guestsRef.current;
+    const seats: Seat[] = [{ name: myName() }, ...guests.map((gu) => ({ name: gu.name }))];
+    if (mode === "brawl") for (let i = 0; i < botsRef.current; i++) seats.push({ name: BOT_NAMES[i], bot: true });
+    const g = newGame(mode, seats);
+    g.fx = [];
+    gameRef.current = g;
+    meRef.current = g.players[0].id;
+    guests.forEach((gu, i) => {
+      gu.pid = g.players[i + 1].id;
+      gu.input = null;
+      gu.link.send({ t: "go", mode, you: gu.pid } satisfies HostMsg);
+    });
+    outbox.current = { fx: [], sounds: [], n: 0, last: 0 };
+    if (roomRef.current) roomRef.current.slow = true;
+    resetControls();
+    setMulti(null);
     setResult(null);
-    setPause(false);
-  }, [setPause]);
+    setScreen("play");
+  }, [setScreen]);
+
+  const backToLobby = useCallback(() => {
+    if (roomRef.current) roomRef.current.slow = false;
+    for (const gu of guestsRef.current) gu.pid = null;
+    gameRef.current = newGame();
+    meRef.current = gameRef.current.players[0].id;
+    setScreen("lobby");
+    broadcastLobby();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setScreen]);
+
+  // ---------- joining ----------
+
+  const join = useCallback(
+    async (code: string) => {
+      unlock();
+      leaveNet();
+      setNetMsg("");
+      setRole("guest");
+      const cancel = { cancelled: false };
+      joinCancel.current = cancel;
+      setLobby({ code, seats: [], mode: "coop", you: 0, online: true });
+      setScreen("connecting");
+      let link: NetLink;
+      try {
+        link = await joinRoom(code, myName(), cancel);
+      } catch (e) {
+        if (!cancel.cancelled) toTitle(e instanceof NetError ? e.message : "Couldn't join that room.");
+        return;
+      }
+      if (cancel.cancelled) return link.close();
+      linkRef.current = link;
+      guestCtl.current = { shots: 0, sel: null, selSends: 0, lastSend: 0, lobby: null };
+      link.onClose = () => {
+        if (linkRef.current === link) toTitle("Lost the connection to the host.");
+      };
+      link.onMessage = (raw) => {
+        const msg = raw as HostMsg;
+        if (msg.t === "s") {
+          mirrorRef.current?.push(msg.s, performance.now());
+        } else if (msg.t === "lobby") {
+          const view = { code, seats: msg.seats, mode: msg.mode, you: msg.you, online: true };
+          guestCtl.current.lobby = view;
+          setLobby(view);
+          if (screenRef.current === "connecting" || (mirrorRef.current === null && screenRef.current !== "lobby")) setScreen("lobby");
+          // the host went back to the lobby
+          if ((screenRef.current === "play" || screenRef.current === "over") && mirrorRef.current?.game.over) {
+            mirrorRef.current = null;
+            setScreen("lobby");
+          }
+        } else if (msg.t === "go") {
+          const m = new Mirror(msg.mode, msg.you);
+          mirrorRef.current = m;
+          gameRef.current = m.game;
+          meRef.current = msg.you;
+          guestCtl.current.shots = 0;
+          resetControls();
+          setMulti(null);
+          setScreen("play");
+        } else if (msg.t === "full") {
+          linkRef.current = null;
+          link.close();
+          toTitle("That room is full (4 players max).");
+        } else if (msg.t === "bye") {
+          linkRef.current = null;
+          link.close();
+          toTitle("The host closed the room.");
+        }
+      };
+      link.send({ t: "hi", v: PROTOCOL, name: myName() } satisfies GuestMsg);
+    },
+    [leaveNet, setRole, setScreen, toTitle],
+  );
+
+  // ---------- bullets ----------
 
   const select = useCallback((k: BulletKind) => {
-    const g = gameRef.current;
-    if (g.ammo[k] > 0) g.selected = k;
+    if (roleRef.current === "guest") {
+      const mine = mirrorRef.current?.mine;
+      if (mine && mine.ammo[k] > 0) {
+        guestCtl.current.sel = k;
+        guestCtl.current.selSends = 8;
+        setHud({ selected: k, ammo: { ...mine.ammo } });
+      }
+      return;
+    }
+    const p = me();
+    if (p && p.ammo[k] > 0) p.selected = k;
   }, []);
 
   // ---------- sizing ----------
@@ -133,19 +506,22 @@ export function RubberBulletMan() {
       if (e.target instanceof HTMLInputElement) return;
       const k = e.key.toLowerCase();
       if (screenRef.current === "play") {
-        if (k === "escape" || k === "p") return setPause(!pausedRef.current);
+        if ((k === "escape" || k === "p") && roleRef.current === "solo") return setPause(!pausedRef.current);
         const n = Number(k);
         if (n >= 1 && n <= KINDS.length) select(KINDS[n - 1]);
         if (k === "q" || k === "e") {
-          const g = gameRef.current;
-          const owned = KINDS.filter((x) => g.ammo[x] > 0);
-          const i = owned.indexOf(g.selected);
-          g.selected = owned[(i + (k === "e" ? 1 : owned.length - 1)) % owned.length];
+          const p = roleRef.current === "guest" ? mirrorRef.current?.mine : me();
+          if (p) {
+            const cur = roleRef.current === "guest" ? (guestCtl.current.sel ?? p.selected) : p.selected;
+            const owned = KINDS.filter((x) => p.ammo[x] > 0);
+            const i = owned.indexOf(cur);
+            select(owned[(i + (k === "e" ? 1 : owned.length - 1)) % owned.length]);
+          }
         }
         if ([" ", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) e.preventDefault();
       } else if ((k === "enter" || k === " ") && screenRef.current === "title") {
         e.preventDefault();
-        start();
+        startSolo();
       }
       ctl.current.keys.add(k);
     };
@@ -153,7 +529,8 @@ export function RubberBulletMan() {
     const blur = () => {
       ctl.current.keys.clear();
       ctl.current.mouse.down = false;
-      if (screenRef.current === "play") setPause(true);
+      // online games can't pause: everyone else is still playing
+      if (screenRef.current === "play" && roleRef.current === "solo") setPause(true);
     };
     const vis = () => document.hidden && blur();
     window.addEventListener("keydown", down);
@@ -166,7 +543,7 @@ export function RubberBulletMan() {
       window.removeEventListener("blur", blur);
       document.removeEventListener("visibilitychange", vis);
     };
-  }, [select, setPause, start]);
+  }, [select, setPause, startSolo]);
 
   // ---------- pointer (touch twin-stick, mouse aim) ----------
   useEffect(() => {
@@ -210,17 +587,21 @@ export function RubberBulletMan() {
         const a = c.aim;
         const dx = a.x - a.ox, dy = a.y - a.oy;
         if (e.type === "pointerup" && screenRef.current === "play") {
-          if (Math.hypot(dx, dy) > DEAD) c.pending = { x: dx, y: dy, t: 0.4 };
+          if (Math.hypot(dx, dy) > DEAD) c.pending = { x: dx, y: dy, t: 0.4, sent: false };
           else if (performance.now() - a.t0 < 300) {
-            // quick tap: snap at the nearest enemy
+            // quick tap: snap at the nearest enemy (or, in a brawl, the nearest rival)
             const g = gameRef.current;
-            let bestD = Infinity;
-            let aim = { x: g.player.aimX, y: g.player.aimY };
-            for (const en of g.enemies) {
-              const d = Math.hypot(en.x - g.player.x, en.y - g.player.y);
-              if (d < bestD) (bestD = d), (aim = { x: en.x - g.player.x, y: en.y - g.player.y });
+            const p = g.players.find((x) => x.id === meRef.current);
+            if (p) {
+              let bestD = Infinity;
+              let aim = { x: p.aimX, y: p.aimY };
+              const targets: { x: number; y: number }[] = g.mode === "brawl" ? g.players.filter((q) => q !== p && !q.down) : g.enemies;
+              for (const en of targets) {
+                const d = Math.hypot(en.x - p.x, en.y - p.y);
+                if (d < bestD) (bestD = d), (aim = { x: en.x - p.x, y: en.y - p.y });
+              }
+              c.pending = { ...aim, t: 0.4, sent: false };
             }
-            c.pending = { ...aim, t: 0.4 };
           }
         }
         c.aim = newStick();
@@ -254,7 +635,8 @@ export function RubberBulletMan() {
     let hudKey = "";
     let overAt = 0;
 
-    const readInput = (g: Game, dt: number): Input => {
+    /** Sticks, keys and mouse, relative to where this screen's man stands. */
+    const readInput = (p: Player | { x: number; y: number; aimX: number; aimY: number; cooldown: number }, dt: number): Input & { tapped: boolean } => {
       const c = ctl.current;
       const k = c.keys;
       let mx = (k.has("d") || k.has("arrowright") ? 1 : 0) - (k.has("a") || k.has("arrowleft") ? 1 : 0);
@@ -265,503 +647,180 @@ export function RubberBulletMan() {
       }
       let ax = 0, ay = 0;
       let fire = c.mouse.down || k.has(" ");
+      let tapped = false;
       const s = scaleRef.current;
       if (c.aim.id !== null && Math.hypot(c.aim.x - c.aim.ox, c.aim.y - c.aim.oy) > DEAD) {
         ax = c.aim.x - c.aim.ox;
         ay = c.aim.y - c.aim.oy;
       } else if (c.mouse.active) {
-        ax = c.mouse.x / s - g.player.x;
-        ay = c.mouse.y / s - g.player.y;
+        ax = c.mouse.x / s - p.x;
+        ay = c.mouse.y / s - p.y;
       }
       if (c.pending) {
         c.pending.t -= dt;
         ax = c.pending.x;
         ay = c.pending.y;
-        if (g.player.cooldown <= 0) {
+        if (roleRef.current === "guest") {
+          // the host fires it; we just hold the aim for a moment
+          if (!c.pending.sent) (c.pending.sent = true), (tapped = true);
+          if (c.pending.t <= 0.1) c.pending = null;
+        } else if (p.cooldown <= 0) {
           fire = true;
           c.pending = null;
         } else if (c.pending.t <= 0) c.pending = null;
       }
-      return { moveX: mx, moveY: my, aimX: ax, aimY: ay, fire };
+      return { moveX: mx, moveY: my, aimX: ax, aimY: ay, fire, tapped };
+    };
+
+    const updateHud = (p: Player | null | undefined, selected?: BulletKind) => {
+      if (!p) return;
+      const sel = selected ?? p.selected;
+      const key = sel + KINDS.map((x) => p.ammo[x]).join(",");
+      if (key !== hudKey) {
+        hudKey = key;
+        setHud({ selected: sel, ammo: { ...p.ammo } });
+      }
+    };
+
+    const finish = (g: Game, now: number) => {
+      overAt ||= now;
+      if (now - overAt < 1300) return;
+      overAt = 0;
+      if (g.mode === "classic") {
+        const prev = load<number>("rbm.best", 0);
+        const isBest = g.score > prev;
+        if (isBest) save("rbm.best", g.score);
+        setBest(Math.max(prev, g.score));
+        setResult({ score: g.score, wave: Math.max(1, g.wave), kills: g.kills, bestChain: g.bestChain, timeMs: Math.round(g.time * 1000), best: isBest && g.score > 0 });
+      } else {
+        const standings: Standing[] = g.players.map((p) => ({
+          name: p.name,
+          color: p.color,
+          me: p.id === meRef.current,
+          bot: !!p.bot,
+          points: p.points,
+          kos: p.kos,
+          falls: p.falls,
+          score: p.score,
+          kills: p.kills,
+        }));
+        if (g.mode === "brawl") standings.sort((a, b) => b.points - a.points || b.kos - a.kos);
+        else standings.sort((a, b) => b.score - a.score);
+        const w = g.brawl?.winner;
+        const winner = w === null || w === undefined ? null : w === -1 ? "DRAW" : (g.players.find((p) => p.id === w)?.name ?? null);
+        setMulti({ mode: g.mode, standings, winner, wave: Math.max(1, g.wave), score: g.score });
+      }
+      setScreen("over");
+    };
+
+    const hostSend = (g: Game, now: number) => {
+      const ob = outbox.current;
+      if (g.fx) ob.fx.push(...g.fx.splice(0));
+      ob.sounds.push(...g.sounds);
+      if (now - ob.last < SNAP_MS || !guestsRef.current.length) return;
+      ob.last = now;
+      const msg: HostMsg = { t: "s", s: encodeSnap(g, ob.n++, ob.fx, ob.sounds) };
+      ob.fx = [];
+      ob.sounds = [];
+      for (const gu of guestsRef.current) {
+        gu.link.send(msg, true);
+        // a friend who's gone quiet for 10 seconds has gone
+        if (gu.pid !== null && now - gu.heard > 10_000) gu.link.close();
+      }
     };
 
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
       const dt = Math.min(0.05, (now - lastT) / 1000);
       lastT = now;
-      const g = gameRef.current;
-      const playing = screenRef.current === "play";
-      if (playing && !pausedRef.current) {
-        step(g, readInput(g, dt), dt);
+      const role = roleRef.current;
+      const scr = screenRef.current;
+      const playing = scr === "play";
+      let g = gameRef.current;
+      let mePlayer: Player | null = null;
+      let selected: BulletKind | undefined;
+
+      if (role === "guest" && mirrorRef.current && (playing || scr === "over")) {
+        const m = mirrorRef.current;
+        g = gameRef.current = m.game;
+        for (const snd of m.update(now)) play(snd);
+        const mine = m.mine;
+        const inp = readInput({ ...m.self, cooldown: 0 }, dt);
+        if (playing && mine && !mine.down && mine.frozen <= 0 && !g.over) {
+          movePlayer(g, m.self, inp.moveX, inp.moveY, dt);
+          if (Math.hypot(inp.aimX, inp.aimY) > 0.01) (m.self.aimX = inp.aimX), (m.self.aimY = inp.aimY);
+          if (mine) (mine.x = m.self.x), (mine.y = m.self.y), (mine.aimX = m.self.aimX), (mine.aimY = m.self.aimY), (mine.walk = m.self.walk);
+        }
+        const gc = guestCtl.current;
+        if (inp.tapped) gc.shots++;
+        const link = linkRef.current;
+        if (link && playing && now - gc.lastSend >= INPUT_MS) {
+          gc.lastSend = now;
+          const sel = gc.selSends > 0 && gc.sel ? KINDS.indexOf(gc.sel) : -1;
+          if (gc.selSends > 0) gc.selSends--;
+          link.send(
+            {
+              t: "i",
+              mx: Math.round(inp.moveX * 100) / 100,
+              my: Math.round(inp.moveY * 100) / 100,
+              ax: Math.round(m.self.aimX * 10) / 10,
+              ay: Math.round(m.self.aimY * 10) / 10,
+              f: inp.fire ? 1 : 0,
+              sh: gc.shots,
+              sel,
+              x: Math.round(m.self.x * 10) / 10,
+              y: Math.round(m.self.y * 10) / 10,
+              w: Math.round(m.self.walk * 10) / 10,
+              tp: m.seenTp,
+            } satisfies GuestMsg,
+            true,
+          );
+        }
+        mePlayer = m.mine;
+        // show our own pick straight away; the host confirms it a moment later
+        if (mePlayer && gc.selSends > 0 && gc.sel) selected = gc.sel;
+        if (playing) updateHud(mePlayer, selected);
+        if (playing && g.over) finish(g, now);
+        if (playing && m.lastAt && now - m.lastAt > 8000) toTitle("Lost the connection to the host.");
+      } else if (playing && !pausedRef.current && role !== "guest") {
+        mePlayer = g.players.find((p) => p.id === meRef.current) ?? null;
+        const inputs: Record<number, Input> = {};
+        if (mePlayer) inputs[mePlayer.id] = readInput(mePlayer, dt);
+        if (role === "host") for (const gu of guestsRef.current) if (gu.pid !== null && gu.input) inputs[gu.pid] = gu.input;
+        step(g, inputs, dt);
         for (const snd of g.sounds) play(snd);
-        const key = g.selected + KINDS.map((x) => g.ammo[x]).join(",");
-        if (key !== hudKey) {
-          hudKey = key;
-          setHud({ selected: g.selected, ammo: { ...g.ammo } });
-        }
-        if (g.over) {
-          overAt ||= now;
-          if (now - overAt > 1300) {
-            overAt = 0;
-            const prev = load<number>("rbm.best", 0);
-            const isBest = g.score > prev;
-            if (isBest) save("rbm.best", g.score);
-            setBest(Math.max(prev, g.score));
-            setResult({ score: g.score, wave: Math.max(1, g.wave), kills: g.kills, bestChain: g.bestChain, timeMs: Math.round(g.time * 1000), best: isBest && g.score > 0 });
-            screenRef.current = "over";
-            setScreen("over");
-          }
-        }
-      } else if (!playing && g.over) {
-        // let the last explosion finish behind the game-over card
-        step(g, { moveX: 0, moveY: 0, aimX: 0, aimY: 0, fire: false }, dt);
-      }
-      draw(cx, canvas, g, font);
-    };
-
-    const draw = (cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, g: Game, font: (px: number) => string) => {
-      const s = canvas.width / W;
-      cx.setTransform(1, 0, 0, 1, 0, 0);
-      cx.fillStyle = "#07051a";
-      cx.fillRect(0, 0, canvas.width, canvas.height);
-      const sh = g.shake;
-      cx.setTransform(s, 0, 0, s, sh ? (Math.random() - 0.5) * sh * s : 0, sh ? (Math.random() - 0.5) * sh * s : 0);
-      const t = g.time;
-
-      // floor grid
-      cx.strokeStyle = "rgba(42,35,80,0.55)";
-      cx.lineWidth = 1;
-      cx.beginPath();
-      for (let x = 30; x < W; x += 30) cx.moveTo(x, 0), cx.lineTo(x, H);
-      for (let y = 30; y < H; y += 30) cx.moveTo(0, y), cx.lineTo(W, y);
-      cx.stroke();
-      cx.strokeStyle = "#22f3ff";
-      cx.lineWidth = 3;
-      cx.strokeRect(1.5, 1.5, W - 3, H - 3);
-
-      for (const o of g.obstacles) {
-        cx.fillStyle = "#1b1440";
-        cx.fillRect(o.x, o.y, o.w, o.h);
-        cx.strokeStyle = "#22f3ff";
-        cx.lineWidth = 2;
-        cx.strokeRect(o.x + 1, o.y + 1, o.w - 2, o.h - 2);
+        if (role === "host") hostSend(g, now);
+        updateHud(mePlayer);
+        if (g.over) finish(g, now);
+      } else if (role !== "guest" && g.over && scr === "over") {
+        // let the last explosion finish behind the results card
+        step(g, {}, dt);
+        if (role === "host") hostSend(g, now);
+        mePlayer = g.players.find((p) => p.id === meRef.current) ?? null;
+      } else {
+        mePlayer = g.players.find((p) => p.id === meRef.current) ?? null;
       }
 
-      // pinball bumpers
-      for (const bp of g.bumpers) {
-        const lit = bp.flash > 0;
-        cx.fillStyle = lit ? "#ff2bd6" : "#2a0f3a";
-        cx.beginPath();
-        cx.arc(bp.x, bp.y, lit ? bp.r + 2 : bp.r, 0, Math.PI * 2);
-        cx.fill();
-        cx.strokeStyle = "#ff2bd6";
-        cx.lineWidth = 3;
-        cx.stroke();
-        cx.fillStyle = lit ? "#fff" : "#ff2bd6";
-        cx.beginPath();
-        cx.arc(bp.x, bp.y, bp.r * 0.35, 0, Math.PI * 2);
-        cx.fill();
-      }
-
-      // spawn warnings
-      for (const w of g.warnings) {
-        if (Math.floor(w.t * 10) % 2) continue;
-        cx.strokeStyle = enemyColor(w.type);
-        cx.lineWidth = 2;
-        const r = isBoss(w.type) ? 30 : 12;
-        cx.beginPath();
-        cx.arc(w.x, w.y, r, 0, Math.PI * 2);
-        cx.stroke();
-        cx.font = font(10);
-        cx.fillStyle = enemyColor(w.type);
-        cx.textAlign = "center";
-        cx.textBaseline = "middle";
-        cx.fillText("!", w.x, w.y + 1);
-      }
-
-      // pickups
-      for (const pk of g.pickups) {
-        if (pk.t > 6 && Math.floor(pk.t * 8) % 2) continue;
-        const y = pk.y + Math.sin(pk.t * 5) * 2;
-        if (pk.kind === "heart") drawHeart(cx, pk.x, y, 7, "#ff4d6d");
-        else if (pk.kind === "shield" || pk.kind === "rapid" || pk.kind === "triple") {
-          const pw = POWERS[pk.kind];
-          cx.fillStyle = pw.color;
-          cx.globalAlpha = 0.25 + Math.sin(pk.t * 8) * 0.1;
-          cx.beginPath();
-          cx.arc(pk.x, y, 12, 0, Math.PI * 2);
-          cx.fill();
-          cx.globalAlpha = 1;
-          cx.strokeStyle = pw.color;
-          cx.lineWidth = 2;
-          cx.beginPath();
-          cx.arc(pk.x, y, 8, 0, Math.PI * 2);
-          cx.stroke();
-          cx.fillStyle = pw.color;
-          cx.font = font(8);
-          cx.textAlign = "center";
-          cx.textBaseline = "middle";
-          cx.fillText(pw.letter, pk.x + 0.5, y + 1);
-        } else {
-          cx.fillStyle = BULLETS[pk.kind].color;
-          cx.globalAlpha = 0.25;
-          cx.beginPath();
-          cx.arc(pk.x, y, 11, 0, Math.PI * 2);
-          cx.fill();
-          cx.globalAlpha = 1;
-          cx.strokeStyle = BULLETS[pk.kind].color;
-          cx.lineWidth = 2;
-          cx.strokeRect(pk.x - 7, y - 7, 14, 14);
-          cx.font = font(8);
-          cx.textAlign = "center";
-          cx.textBaseline = "middle";
-          cx.fillText(BULLETS[pk.kind].name[0], pk.x + 0.5, y + 1);
-        }
-      }
-
-      // enemies
-      const p = g.player;
-      for (const e of g.enemies) {
-        const col = enemyColor(e.type);
-        if (e.type === "dasher" && e.state === 0 && e.t < 0.6) {
-          cx.strokeStyle = "rgba(255,138,61,0.5)";
-          cx.setLineDash([4, 4]);
-          cx.lineWidth = 2;
-          cx.beginPath();
-          cx.moveTo(e.x, e.y);
-          cx.lineTo(e.x + Math.cos(e.fire) * 160, e.y + Math.sin(e.fire) * 160);
-          cx.stroke();
-          cx.setLineDash([]);
-        }
-        const squish = 1 + Math.sin(t * 9 + e.id) * 0.06;
-        cx.fillStyle = e.flash > 0 ? "#ffffff" : e.frozen > 0 ? "#6c4aa8" : col;
-        cx.beginPath();
-        cx.ellipse(e.x, e.y, e.r * squish, e.r / squish, 0, 0, Math.PI * 2);
-        cx.fill();
-        if (e.type === "brute") {
-          cx.strokeStyle = "#ffd0da";
-          cx.lineWidth = 2;
-          cx.stroke();
-        }
-        if (e.type === "shooter") {
-          const a = Math.atan2(p.y - e.y, p.x - e.x);
-          cx.strokeStyle = col;
-          cx.lineWidth = 4;
-          cx.beginPath();
-          cx.moveTo(e.x, e.y);
-          cx.lineTo(e.x + Math.cos(a) * (e.r + 6), e.y + Math.sin(a) * (e.r + 6));
-          cx.stroke();
-        }
-        if (e.type === "boss") {
-          cx.fillStyle = "#ff2bd6";
-          cx.beginPath();
-          cx.moveTo(e.x - 16, e.y - 24);
-          cx.lineTo(e.x - 16, e.y - 38);
-          cx.lineTo(e.x - 8, e.y - 30);
-          cx.lineTo(e.x, e.y - 40);
-          cx.lineTo(e.x + 8, e.y - 30);
-          cx.lineTo(e.x + 16, e.y - 38);
-          cx.lineTo(e.x + 16, e.y - 24);
-          cx.fill();
-        }
-        if (e.type === "queen") {
-          cx.fillStyle = "#ffe14d";
-          for (let i = -2; i <= 2; i++) {
-            cx.beginPath();
-            cx.arc(e.x + i * 7, e.y - 27 - (2 - Math.abs(i)) * 3, 3, 0, Math.PI * 2);
-            cx.fill();
-          }
-          // a bubble wand
-          cx.strokeStyle = "#ece9ff";
-          cx.lineWidth = 2;
-          cx.beginPath();
-          cx.moveTo(e.x + 24, e.y + 6);
-          cx.lineTo(e.x + 34, e.y - 10);
-          cx.stroke();
-          cx.beginPath();
-          cx.arc(e.x + 37, e.y - 15, 5, 0, Math.PI * 2);
-          cx.stroke();
-        }
-        if (e.type === "fuse") {
-          const lit = e.state === 1;
-          const tipX = e.x + 4, tipY = e.y - e.r - 6;
-          cx.strokeStyle = "#c9b38a";
-          cx.lineWidth = 2;
-          cx.beginPath();
-          cx.moveTo(e.x + 1, e.y - e.r + 1);
-          cx.quadraticCurveTo(e.x + 6, e.y - e.r - 2, tipX, tipY);
-          cx.stroke();
-          cx.fillStyle = Math.floor(t * 20) % 2 ? "#ffe14d" : "#ff8a3d";
-          cx.beginPath();
-          cx.arc(tipX, tipY, lit ? 3.5 : 2, 0, Math.PI * 2);
-          cx.fill();
-          if (lit) {
-            cx.strokeStyle = "rgba(255,77,109,0.7)";
-            cx.setLineDash([4, 4]);
-            cx.lineWidth = 1.5;
-            cx.beginPath();
-            cx.arc(e.x, e.y, BLAST_R, 0, Math.PI * 2);
-            cx.stroke();
-            cx.setLineDash([]);
-            if (Math.floor(e.t * 12) % 2) {
-              cx.fillStyle = "#ff4d6d";
-              cx.beginPath();
-              cx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
-              cx.fill();
-            }
-          }
-        }
-        if (e.type === "mirror") {
-          cx.strokeStyle = e.frozen > 0 ? "#5a5480" : "#ffffff";
-          cx.lineWidth = 4;
-          cx.lineCap = "round";
-          cx.beginPath();
-          cx.arc(e.x, e.y, e.r + 5, e.face - MIRROR_ARC, e.face + MIRROR_ARC);
-          cx.stroke();
-          cx.lineCap = "butt";
-        }
-        // eyes follow you
-        const a = Math.atan2(p.y - e.y, p.x - e.x);
-        const er = Math.max(2, e.r * 0.28);
-        for (const side of [-1, 1]) {
-          const ex = e.x + Math.cos(a + side * 0.6) * e.r * 0.45;
-          const ey = e.y + Math.sin(a + side * 0.6) * e.r * 0.45;
-          cx.fillStyle = "#05040b";
-          cx.beginPath();
-          cx.arc(ex, ey, er, 0, Math.PI * 2);
-          cx.fill();
-          cx.fillStyle = "#fff";
-          cx.fillRect(ex + Math.cos(a) * er * 0.4 - 1, ey + Math.sin(a) * er * 0.4 - 1, 2, 2);
-        }
-        if (e.frozen > 0) {
-          cx.strokeStyle = "#b26bff";
-          cx.lineWidth = 2;
-          cx.strokeRect(e.x - e.r - 3, e.y - e.r - 3, (e.r + 3) * 2, (e.r + 3) * 2);
-        }
-        if (e.maxHp > 1) {
-          const wv = e.r * 2;
-          cx.fillStyle = "#2a2350";
-          cx.fillRect(e.x - wv / 2, e.y + e.r + 4, wv, 3);
-          cx.fillStyle = col;
-          cx.fillRect(e.x - wv / 2, e.y + e.r + 4, (wv * Math.max(0, e.hp)) / e.maxHp, 3);
-        }
-      }
-
-      // aim preview (touch aim stick or mouse)
       const c = ctl.current;
       const aiming = c.aim.id !== null && Math.hypot(c.aim.x - c.aim.ox, c.aim.y - c.aim.oy) > DEAD;
-      if (screenRef.current === "play" && !g.over && (aiming || c.mouse.active)) {
-        const kind = g.ammo[g.selected] > 0 ? g.selected : "bouncer";
-        const pts = predictPath(g, p.x, p.y, p.aimX, p.aimY, BULLETS[kind].r, aiming ? 360 : 140, aiming ? 2 : 1);
-        cx.strokeStyle = BULLETS[kind].color;
-        cx.globalAlpha = aiming ? 0.8 : 0.35;
-        cx.lineWidth = 1.5;
-        cx.setLineDash([5, 5]);
-        cx.lineDashOffset = -t * 30;
-        cx.beginPath();
-        pts.forEach((q, i) => (i ? cx.lineTo(q.x, q.y) : cx.moveTo(q.x, q.y)));
-        cx.stroke();
-        cx.setLineDash([]);
-        cx.globalAlpha = 1;
-      }
-
-      // bullets
-      for (const b of g.bullets) {
-        const col = b.owner === "enemy" ? "#ff8a3d" : BULLETS[b.kind].color;
-        cx.strokeStyle = col;
-        cx.globalAlpha = 0.35;
-        cx.lineWidth = b.r * 1.4;
-        cx.beginPath();
-        cx.moveTo(b.x - b.vx * 0.04, b.y - b.vy * 0.04);
-        cx.lineTo(b.x, b.y);
-        cx.stroke();
-        cx.globalAlpha = 0.25;
-        cx.fillStyle = col;
-        cx.beginPath();
-        cx.arc(b.x, b.y, b.r * 2, 0, Math.PI * 2);
-        cx.fill();
-        cx.globalAlpha = 1;
-        if (b.kind === "bomb" && b.owner === "player") {
-          cx.fillStyle = "#1b1440";
-          cx.beginPath();
-          cx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-          cx.fill();
-          cx.strokeStyle = col;
-          cx.lineWidth = 2;
-          cx.stroke();
-          cx.fillStyle = Math.floor(b.age * 16) % 2 ? "#ffe14d" : "#ff4d6d";
-          cx.beginPath();
-          cx.arc(b.x, b.y, 2.5, 0, Math.PI * 2);
-          cx.fill();
-        } else if (b.kind === "boomerang") {
-          cx.save();
-          cx.translate(b.x, b.y);
-          cx.rotate(b.age * 18);
-          cx.fillRect(-b.r, -2, b.r * 2, 4);
-          cx.fillRect(-2, -b.r, 4, b.r * 2);
-          cx.restore();
-        } else {
-          cx.beginPath();
-          cx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-          cx.fill();
-          cx.fillStyle = "#fff";
-          cx.beginPath();
-          cx.arc(b.x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.35, 0, Math.PI * 2);
-          cx.fill();
-        }
-        if (b.kind === "piercer" && b.phased) {
-          cx.strokeStyle = "#fff";
-          cx.lineWidth = 1;
-          cx.beginPath();
-          cx.arc(b.x, b.y, b.r + 3, 0, Math.PI * 2);
-          cx.stroke();
-        }
-      }
-
-      // the man
-      if (!g.over && !(p.invuln > 0 && Math.floor(p.invuln * 12) % 2)) {
-        const len = Math.hypot(p.aimX, p.aimY) || 1;
-        const ax = p.aimX / len, ay = p.aimY / len;
-        const bob = Math.sin(p.walk) * 1.5;
-        cx.fillStyle = "#3a2a00";
-        cx.beginPath();
-        cx.ellipse(p.x, p.y + p.r + 2, p.r, 3, 0, 0, Math.PI * 2);
-        cx.fill();
-        cx.strokeStyle = BULLETS[g.ammo[g.selected] > 0 ? g.selected : "bouncer"].color;
-        cx.lineWidth = 5;
-        cx.lineCap = "round";
-        cx.beginPath();
-        cx.moveTo(p.x + ax * 4, p.y + ay * 4 + bob);
-        cx.lineTo(p.x + ax * (p.r + 8), p.y + ay * (p.r + 8) + bob);
-        cx.stroke();
-        cx.lineCap = "butt";
-        cx.fillStyle = "#ffe14d";
-        cx.beginPath();
-        cx.arc(p.x, p.y + bob, p.r, 0, Math.PI * 2);
-        cx.fill();
-        cx.fillStyle = "#ff2bd6";
-        cx.fillRect(p.x - p.r, p.y - 3 + bob, p.r * 2, 3); // headband
-        cx.fillStyle = "#05040b";
-        for (const side of [-1, 1]) cx.fillRect(p.x + ax * 3 + side * -ay * 3.5 - 1.5, p.y + ay * 3 + side * ax * 3.5 + bob, 3, 3);
-      }
-
-      for (const bl of g.blasts) {
-        const k = bl.t / 0.4;
-        cx.globalAlpha = 0.5 * (1 - k);
-        cx.fillStyle = "#ff8a3d";
-        cx.beginPath();
-        cx.arc(bl.x, bl.y, bl.r * (0.4 + k * 0.6), 0, Math.PI * 2);
-        cx.fill();
-        cx.globalAlpha = 1 - k;
-        cx.strokeStyle = "#ffe14d";
-        cx.lineWidth = 3;
-        cx.stroke();
-        cx.globalAlpha = 1;
-      }
-
-      if (!g.over && g.power.shield) {
-        cx.strokeStyle = POWERS.shield.color;
-        cx.globalAlpha = 0.55 + Math.sin(t * 6) * 0.2;
-        cx.lineWidth = 2;
-        cx.beginPath();
-        cx.arc(p.x, p.y, p.r + 7, 0, Math.PI * 2);
-        cx.stroke();
-        cx.globalAlpha = 0.12;
-        cx.fillStyle = POWERS.shield.color;
-        cx.fill();
-        cx.globalAlpha = 1;
-      }
-
-      for (const pt of g.particles) {
-        cx.globalAlpha = 1 - pt.t / pt.life;
-        cx.fillStyle = pt.color;
-        cx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
-      }
-      cx.globalAlpha = 1;
-      cx.textAlign = "center";
-      cx.textBaseline = "middle";
-      for (const pp of g.pops) {
-        cx.globalAlpha = Math.min(1, 2 - pp.t * 2);
-        cx.font = font(7);
-        cx.fillStyle = "#05040b";
-        cx.fillText(pp.text, pp.x + 1, pp.y + 1);
-        cx.fillStyle = pp.color;
-        cx.fillText(pp.text, pp.x, pp.y);
-      }
-      cx.globalAlpha = 1;
-
-      // HUD
-      cx.setTransform(s, 0, 0, s, 0, 0);
-      if (screenRef.current !== "title") {
-        cx.textBaseline = "top";
-        cx.font = font(10);
-        cx.textAlign = "left";
-        cx.fillStyle = "#ffe14d";
-        cx.fillText(String(g.score).padStart(6, "0"), 10, 10);
-        cx.textAlign = "center";
-        cx.fillStyle = "#22f3ff";
-        cx.font = font(8);
-        cx.fillText(`WAVE ${Math.max(1, g.wave)}`, W / 2, 12);
-        for (let i = 0; i < MAX_HEARTS; i++) drawHeart(cx, W - 16 - i * 18, 16, 6, i < g.hearts ? "#ff4d6d" : "#2a2350");
-        // active power-ups, under the score
-        cx.font = font(7);
-        cx.textAlign = "left";
-        let px = 10;
-        for (const k of POWER_KINDS) {
-          const on = k === "shield" ? g.power.shield : g.power[k] > 0;
-          if (!on) continue;
-          const left = k === "shield" ? 0 : g.power[k];
-          if (left > 0 && left < 2 && Math.floor(left * 8) % 2) continue;
-          const label = k === "shield" ? POWERS[k].name.toUpperCase() : `${POWERS[k].name.toUpperCase()} ${Math.ceil(left)}`;
-          cx.fillStyle = POWERS[k].color;
-          cx.fillText(label, px, 26);
-          px += cx.measureText(label).width + 8;
-        }
-      }
-      if (g.banner && screenRef.current === "play") {
-        cx.textAlign = "center";
-        cx.textBaseline = "middle";
-        cx.font = font(22);
-        cx.fillStyle = "#05040b";
-        cx.fillText(g.banner.text, W / 2 + 2, H * 0.38 + 2);
-        cx.fillStyle = g.banner.text === "BOSS WAVE" ? "#ff2bd6" : "#ffe14d";
-        cx.fillText(g.banner.text, W / 2, H * 0.38);
-        if (g.banner.sub) {
-          cx.font = font(10);
-          cx.fillStyle = "#ece9ff";
-          cx.fillText(g.banner.sub, W / 2, H * 0.38 + 28);
-        }
-      }
-
-      // thumb sticks, in screen pixels
-      const dpr = canvas.width / (W * scaleRef.current);
-      cx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      for (const [st, col] of [
-        [c.move, "#ece9ff"],
-        [c.aim, BULLETS[g.selected].color],
-      ] as const) {
-        if (st.id === null) continue;
-        let dx = st.x - st.ox, dy = st.y - st.oy;
-        const d = Math.hypot(dx, dy);
-        if (d > STICK) (dx *= STICK / d), (dy *= STICK / d);
-        cx.globalAlpha = 0.18;
-        cx.fillStyle = col;
-        cx.beginPath();
-        cx.arc(st.ox, st.oy, STICK, 0, Math.PI * 2);
-        cx.fill();
-        cx.globalAlpha = 0.6;
-        cx.beginPath();
-        cx.arc(st.ox + dx, st.oy + dy, 20, 0, Math.PI * 2);
-        cx.fill();
-        cx.globalAlpha = 1;
-      }
+      const drawMe = mePlayer && selected ? { ...mePlayer, selected } : mePlayer;
+      drawGame(cx, canvas, g, {
+        font,
+        me: drawMe,
+        hud: scr === "play" || scr === "over",
+        playing,
+        aim: { aiming, mouse: c.mouse.active },
+        sticks: { move: c.move, aim: c.aim },
+        scale: scaleRef.current,
+      });
     };
 
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [setScreen, toTitle]);
 
-  const g = gameRef.current;
+  const mine = me();
+  const solo = role === "solo";
 
   return (
     <div className="fixed inset-0 flex select-none flex-col bg-bg" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
@@ -774,9 +833,14 @@ export function RubberBulletMan() {
           <button className="font-pixel text-[9px] text-dim" onClick={() => setMuted(!muted)} aria-label={muted ? "Unmute" : "Mute"}>
             {muted ? "🔇" : "🔊"}
           </button>
-          {screen === "play" && (
+          {screen === "play" && solo && (
             <button className="font-pixel text-[9px] text-cyan" onClick={() => setPause(!paused)}>
               {paused ? "▶" : "II"}
+            </button>
+          )}
+          {screen === "play" && !solo && (
+            <button className="font-pixel text-[9px] text-dim" onClick={() => (window.confirm(role === "host" ? "End the game for everyone?" : "Leave this game?") ? toTitle() : null)}>
+              ✕
             </button>
           )}
         </div>
@@ -787,33 +851,76 @@ export function RubberBulletMan() {
 
         {screen === "title" && (
           <Overlay>
-            <Title best={best} onPlay={start} />
+            <Title best={best} onPlay={() => startSolo()} onBots={(n) => startSolo("brawl", n)} onFriends={() => setScreen("friends")} />
           </Overlay>
         )}
-        {screen === "play" && paused && (
+        {screen === "friends" && (
+          <Overlay>
+            <Friends
+              code={joinCode}
+              setCode={setJoinCode}
+              msg={netMsg}
+              onHost={() => void hostRoom()}
+              onJoin={(c) => void join(c)}
+              onBack={() => {
+                setNetMsg("");
+                setScreen("title");
+              }}
+            />
+          </Overlay>
+        )}
+        {screen === "connecting" && (
+          <Overlay>
+            <div className="text-center">
+              <div className="font-pixel text-[11px] text-cyan blink">{role === "host" ? "OPENING A ROOM..." : `JOINING ${lobby?.code ?? ""}...`}</div>
+              <p className="mt-3 text-[17px] text-dim">{role === "host" ? "Getting you a room code." : "Knocking on your friend's game. This takes a few seconds."}</p>
+              <button onClick={() => toTitle()} className="mt-5 block w-full border-2 border-line py-2.5 font-pixel text-[9px] text-dim">
+                CANCEL
+              </button>
+            </div>
+          </Overlay>
+        )}
+        {screen === "lobby" && lobby && (
+          <Overlay>
+            <Lobby
+              view={lobby}
+              host={role === "host"}
+              bots={bots}
+              msg={netMsg}
+              onMode={setHostMode}
+              onBots={changeBots}
+              onStart={startOnline}
+              onLeave={() => toTitle()}
+            />
+          </Overlay>
+        )}
+        {screen === "play" && paused && solo && (
           <Overlay>
             <div className="text-center">
               <div className="font-pixel text-[18px] text-yellow neon">PAUSED</div>
               <button onClick={() => setPause(false)} className="mt-6 block w-full bg-pink px-6 py-3 font-pixel text-[11px] text-bg">
                 ▶ RESUME
               </button>
-              <button
-                onClick={() => {
-                  screenRef.current = "title";
-                  setScreen("title");
-                  setPause(false);
-                  gameRef.current = newGame();
-                }}
-                className="mt-3 block w-full border-2 border-line px-6 py-3 font-pixel text-[10px] text-dim"
-              >
+              <button onClick={() => toTitle()} className="mt-3 block w-full border-2 border-line px-6 py-3 font-pixel text-[10px] text-dim">
                 QUIT
               </button>
             </div>
           </Overlay>
         )}
-        {screen === "over" && result && (
+        {screen === "over" && result && gameRef.current.mode === "classic" && (
           <Overlay>
-            <GameOver result={result} best={best} onAgain={start} />
+            <GameOver result={result} best={best} onAgain={() => startSolo()} onMenu={() => toTitle()} />
+          </Overlay>
+        )}
+        {screen === "over" && multi && (
+          <Overlay>
+            <Results
+              r={multi}
+              role={role}
+              onAgain={role === "host" ? startOnline : () => startSolo("brawl", gameRef.current.players.filter((p) => p.bot).length || 1)}
+              onLobby={role === "host" ? backToLobby : undefined}
+              onMenu={() => toTitle()}
+            />
           </Overlay>
         )}
       </div>
@@ -829,7 +936,7 @@ export function RubberBulletMan() {
               onPointerDown={(e) => {
                 e.preventDefault();
                 select(k);
-                setHud({ selected: g.selected, ammo: { ...g.ammo } });
+                if (role !== "guest" && mine) setHud({ selected: mine.selected, ammo: { ...mine.ammo } });
               }}
               disabled={n <= 0}
               className="flex touch-none flex-col items-center justify-center border-2 bg-panel transition-opacity disabled:opacity-30"
@@ -849,15 +956,6 @@ export function RubberBulletMan() {
   );
 }
 
-function drawHeart(cx: CanvasRenderingContext2D, x: number, y: number, s: number, color: string) {
-  cx.fillStyle = color;
-  cx.beginPath();
-  cx.moveTo(x, y + s);
-  cx.bezierCurveTo(x - s * 1.6, y - s * 0.2, x - s * 0.6, y - s * 1.4, x, y - s * 0.4);
-  cx.bezierCurveTo(x + s * 0.6, y - s * 1.4, x + s * 1.6, y - s * 0.2, x, y + s);
-  cx.fill();
-}
-
 function Overlay({ children }: { children: React.ReactNode }) {
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center overflow-y-auto bg-bg/80 p-4">
@@ -868,8 +966,8 @@ function Overlay({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Title({ best, onPlay }: { best: number; onPlay: () => void }) {
-  const [board, setBoard] = useState(false);
+function Title({ best, onPlay, onBots, onFriends }: { best: number; onPlay: () => void; onBots: (n: number) => void; onFriends: () => void }) {
+  const [tab, setTab] = useState<"how" | "board" | "brawl">("how");
   return (
     <div>
       <div className="text-center">
@@ -882,14 +980,37 @@ function Title({ best, onPlay }: { best: number; onPlay: () => void }) {
       </div>
       {best > 0 && <div className="mt-3 text-center font-pixel text-[9px] text-yellow">BEST {best}</div>}
       <button onClick={onPlay} className="mt-4 block w-full bg-pink py-3 font-pixel text-[12px] text-bg active:scale-[0.98]">
-        ▶ PLAY
+        ▶ PLAY SOLO
       </button>
-      <button onClick={() => setBoard(!board)} className="mt-2 block w-full border-2 border-line py-2.5 font-pixel text-[9px] text-cyan">
-        {board ? "HOW TO PLAY" : "HIGH SCORES"}
+      <button onClick={onFriends} className="mt-2 block w-full bg-cyan py-3 font-pixel text-[11px] text-bg active:scale-[0.98]">
+        👥 PLAY WITH FRIENDS
       </button>
-      {board ? (
-        <Leaderboard />
-      ) : (
+      <div className="mt-2 border-2 border-yellow/60 p-2">
+        <div className="text-center font-pixel text-[9px] text-yellow">NEW! RUBBER BRAWL VS BOTS</div>
+        <div className="mt-2 grid grid-cols-3 gap-2">
+          {[1, 2, 3].map((n) => (
+            <button key={n} onClick={() => onBots(n)} className="border-2 border-line py-2 font-pixel text-[8px] text-ink active:scale-[0.97]">
+              {n} BOT{n > 1 ? "S" : ""}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-1">
+        {(
+          [
+            ["how", "HOW TO"],
+            ["brawl", "BRAWL?"],
+            ["board", "SCORES"],
+          ] as const
+        ).map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)} className={`border-2 py-1.5 font-pixel text-[8px] ${tab === k ? "border-cyan text-cyan" : "border-line text-dim"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "board" && <Leaderboard />}
+      {tab === "brawl" && <BrawlHelp />}
+      {tab === "how" && (
         <>
           <ul className="mt-4 space-y-1.5 text-[17px] leading-tight">
             {KINDS.map((k) => (
@@ -927,7 +1048,11 @@ function Title({ best, onPlay }: { best: number; onPlay: () => void }) {
             </p>
             <p className="mt-1">
               <b className="font-normal text-cyan">Watch out for:</b> Fuses that light up and blow up next to you, Mirrors that bounce shots off their shield
-              (hit them from behind, glue them, or use a Piercer or Bomb), and a new boss, the Bubble Queen, on wave 10.
+              (hit them from behind, glue them, or use a Piercer or Bomb), and the Bubble Queen on wave 10.
+            </p>
+            <p className="mt-1">
+              <b className="font-normal text-cyan">With friends:</b> one of you hosts and shares the room code or link, up to 4 players. Team up against the waves
+              in Co-op, or fight each other in Rubber Brawl.
             </p>
           </div>
         </>
@@ -936,7 +1061,304 @@ function Title({ best, onPlay }: { best: number; onPlay: () => void }) {
   );
 }
 
-function GameOver({ result, best, onAgain }: { result: Result; best: number; onAgain: () => void }) {
+function BrawlHelp() {
+  return (
+    <div className="mt-4 space-y-1.5 text-[16px] leading-snug text-ink/85">
+      <p>
+        <b className="font-normal text-pink">Rubber Brawl</b> is every man for himself. No monsters: just you, up to three rivals and a lot of rubber.
+      </p>
+      <p>
+        Knock someone out for <b className="font-normal text-yellow">1 point</b>. Do it with a shot that bounced off a wall or bumper first and it&apos;s a{" "}
+        <b className="font-normal text-yellow">bank KO worth 2</b>. Get hit by your own rubber and it&apos;s an <b className="font-normal text-red">own goal, -1</b>.
+      </p>
+      <p>
+        First to {BRAWL_TARGET} points wins, or the leader when the 3-minute clock runs out. Bullet drops land every few seconds: Glue sticks a rival in place,
+        Seekers hunt them down, and Bombs hurt everybody in the blast.
+      </p>
+      <p className="text-dim">Your shots wear a ring in your colour, so you can tell whose rubber is whose.</p>
+    </div>
+  );
+}
+
+function Friends({
+  code,
+  setCode,
+  msg,
+  onHost,
+  onJoin,
+  onBack,
+}: {
+  code: string;
+  setCode: (c: string) => void;
+  msg: string;
+  onHost: () => void;
+  onJoin: (code: string) => void;
+  onBack: () => void;
+}) {
+  const [name, setName] = useState("");
+  useEffect(() => setName(getPlayer().name), []);
+  const named = cleanName(name).length >= 2;
+  const keep = () => {
+    const n = cleanName(name);
+    if (n.length >= 2) setPlayerName(n);
+    return n.length >= 2;
+  };
+  return (
+    <div>
+      <div className="text-center font-pixel text-[14px] text-cyan neon">PLAY WITH FRIENDS</div>
+      <p className="mt-2 text-center text-[17px] text-dim">Up to 4 players, on phones or laptops.</p>
+      {msg && <div className="mt-3 border-2 border-red/60 p-2 text-[16px] leading-snug text-red">{msg}</div>}
+      <label className="mt-4 block font-pixel text-[8px] text-dim">YOUR NAME</label>
+      <input
+        value={name}
+        onChange={(e) => setName(cleanName(e.target.value))}
+        placeholder="NAME"
+        maxLength={12}
+        className="mt-1 w-full border-2 border-line bg-bg px-2 py-2 font-pixel text-[10px] text-ink outline-none focus:border-cyan"
+      />
+      <form
+        className="mt-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (code.length === 4 && keep()) onJoin(code);
+        }}
+      >
+        <label className="block font-pixel text-[8px] text-dim">JOIN A ROOM</label>
+        <div className="mt-1 flex gap-2">
+          <input
+            value={code}
+            onChange={(e) => setCode(cleanCode(e.target.value))}
+            placeholder="CODE"
+            inputMode="text"
+            autoCapitalize="characters"
+            maxLength={4}
+            className="min-w-0 flex-1 border-2 border-line bg-bg px-2 py-2 text-center font-pixel text-[14px] tracking-[0.3em] text-yellow outline-none focus:border-cyan"
+          />
+          <button disabled={code.length !== 4 || !named} className="bg-cyan px-4 font-pixel text-[9px] text-bg disabled:opacity-40">
+            JOIN
+          </button>
+        </div>
+      </form>
+      <div className="my-4 text-center font-pixel text-[8px] text-dim">OR</div>
+      <button
+        disabled={!named}
+        onClick={() => keep() && onHost()}
+        className="block w-full bg-pink py-3 font-pixel text-[11px] text-bg active:scale-[0.98] disabled:opacity-40"
+      >
+        HOST A ROOM
+      </button>
+      {!named && <p className="mt-2 text-center text-[15px] text-dim">Type a name first (2+ letters).</p>}
+      <button onClick={onBack} className="mt-3 block w-full border-2 border-line py-2.5 font-pixel text-[9px] text-dim">
+        BACK
+      </button>
+    </div>
+  );
+}
+
+function Lobby({
+  view,
+  host,
+  bots,
+  msg,
+  onMode,
+  onBots,
+  onStart,
+  onLeave,
+}: {
+  view: LobbyView;
+  host: boolean;
+  bots: number;
+  msg: string;
+  onMode: (m: Mode) => void;
+  onBots: (d: number) => void;
+  onStart: () => void;
+  onLeave: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const humans = view.seats.filter((s) => !s.bot).length;
+  const canStart = view.mode === "brawl" ? view.seats.length >= 2 : true;
+  const share = async () => {
+    const url = `${window.location.origin}/rubber-bullet-man?room=${view.code}`;
+    const text = `Come play Rubber Bullet Man with me! Room ${view.code}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Rubber Bullet Man", text, url });
+        return;
+      }
+    } catch {
+      /* cancelled: fall back to copying */
+    }
+    try {
+      await navigator.clipboard.writeText(`${text}: ${url}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt("Copy this link", url);
+    }
+  };
+  return (
+    <div>
+      <div className="text-center">
+        <div className="font-pixel text-[8px] text-dim">ROOM CODE</div>
+        <div className="mt-1 font-pixel text-[30px] tracking-[0.25em] text-yellow neon">{view.code}</div>
+        {host && (
+          <button onClick={() => void share()} className="mt-2 w-full border-2 border-cyan py-2 font-pixel text-[9px] text-cyan active:scale-[0.98]">
+            {copied ? "LINK COPIED!" : "📨 SEND INVITE LINK"}
+          </button>
+        )}
+        {host && !view.online && <p className="mt-2 text-[14px] text-dim">Test mode: no database, so only browsers on this server can join.</p>}
+      </div>
+
+      <div className="mt-4 font-pixel text-[8px] text-dim">PLAYERS ({humans}/4)</div>
+      <ul className="mt-1 space-y-1">
+        {view.seats.map((s, i) => (
+          <li key={i} className="flex items-center gap-2 border-2 border-line px-2 py-1.5 text-[17px]">
+            <span className="block h-3 w-3 rounded-full" style={{ background: PLAYER_COLORS[i % PLAYER_COLORS.length] }} />
+            <span className="flex-1 truncate">{s.name}</span>
+            <span className="font-pixel text-[7px] text-dim">{i === 0 ? "HOST" : s.bot ? "BOT" : i === view.you ? "YOU" : ""}</span>
+          </li>
+        ))}
+        {view.seats.length < 4 && <li className="border-2 border-dashed border-line px-2 py-1.5 text-[16px] text-dim">Waiting for friends to join…</li>}
+      </ul>
+
+      <div className="mt-4 font-pixel text-[8px] text-dim">GAME</div>
+      {host ? (
+        <div className="mt-1 grid grid-cols-2 gap-2">
+          {(
+            [
+              ["coop", "CO-OP", "Team up vs the waves"],
+              ["brawl", "BRAWL", "Everyone vs everyone"],
+            ] as const
+          ).map(([m, label, sub]) => (
+            <button
+              key={m}
+              onClick={() => onMode(m)}
+              className={`border-2 px-1 py-2 text-center ${view.mode === m ? "border-pink bg-pink/10" : "border-line"}`}
+            >
+              <div className={`font-pixel text-[9px] ${view.mode === m ? "text-pink" : "text-ink"}`}>{label}</div>
+              <div className="mt-1 text-[14px] leading-tight text-dim">{sub}</div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-1 border-2 border-line p-2 text-[17px]">
+          <span className="text-pink">{view.mode === "brawl" ? "Rubber Brawl" : "Co-op waves"}</span>
+          <span className="text-dim"> (the host picks)</span>
+        </div>
+      )}
+      {host && view.mode === "brawl" && (
+        <div className="mt-2 flex items-center justify-between border-2 border-line px-2 py-1.5">
+          <span className="text-[17px] text-dim">Bots</span>
+          <div className="flex items-center gap-3">
+            <button onClick={() => onBots(-1)} disabled={bots <= 0} className="px-2 font-pixel text-[12px] text-cyan disabled:opacity-30">
+              −
+            </button>
+            <span className="font-pixel text-[10px]">{bots}</span>
+            <button onClick={() => onBots(1)} disabled={humans + bots >= 4} className="px-2 font-pixel text-[12px] text-cyan disabled:opacity-30">
+              +
+            </button>
+          </div>
+        </div>
+      )}
+      {msg && <div className="mt-2 text-[15px] text-red">{msg}</div>}
+
+      {host ? (
+        <>
+          <button onClick={onStart} disabled={!canStart} className="mt-4 block w-full bg-pink py-3 font-pixel text-[12px] text-bg active:scale-[0.98] disabled:opacity-40">
+            ▶ START
+          </button>
+          {!canStart && <p className="mt-1 text-center text-[15px] text-dim">A brawl needs a friend or a bot.</p>}
+          <p className="mt-2 text-center text-[14px] leading-snug text-dim">Friends can join mid-game too. Keep this screen open on your phone while you play: you&apos;re the host.</p>
+        </>
+      ) : (
+        <div className="mt-4 text-center font-pixel text-[9px] text-cyan blink">WAITING FOR THE HOST TO START</div>
+      )}
+      <button onClick={onLeave} className="mt-3 block w-full border-2 border-line py-2.5 font-pixel text-[9px] text-dim">
+        {host ? "CLOSE ROOM" : "LEAVE"}
+      </button>
+    </div>
+  );
+}
+
+function Results({ r, role, onAgain, onLobby, onMenu }: { r: MultiResult; role: Role; onAgain: () => void; onLobby?: () => void; onMenu: () => void }) {
+  const brawl = r.mode === "brawl";
+  const iWon = brawl && r.standings[0]?.me && r.winner !== "DRAW";
+  return (
+    <div className="text-center">
+      {brawl ? (
+        <>
+          <div className={`font-pixel text-[18px] neon ${iWon ? "text-green" : "text-yellow"}`}>{r.winner === "DRAW" ? "DRAW!" : iWon ? "YOU WIN!" : `${r.winner ?? "NOBODY"} WINS`}</div>
+          <div className="mt-1 text-[16px] text-dim">Rubber Brawl</div>
+        </>
+      ) : (
+        <>
+          <div className="font-pixel text-[18px] text-red neon">TEAM WIPED</div>
+          <div className="mt-3 font-pixel text-[24px] text-yellow neon">{r.score}</div>
+          <div className="mt-1 text-[16px] text-dim">Co-op · reached wave {r.wave}</div>
+        </>
+      )}
+      <table className="mt-4 w-full text-left text-[16px]">
+        <thead>
+          <tr className="font-pixel text-[7px] text-dim">
+            <th className="pb-1">PLAYER</th>
+            {brawl ? (
+              <>
+                <th className="pb-1 text-right">PTS</th>
+                <th className="pb-1 text-right">KO</th>
+                <th className="pb-1 text-right">FALLS</th>
+              </>
+            ) : (
+              <>
+                <th className="pb-1 text-right">SCORE</th>
+                <th className="pb-1 text-right">KILLS</th>
+              </>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {r.standings.map((s, i) => (
+            <tr key={i} className={s.me ? "text-ink" : "text-ink/75"}>
+              <td className="py-0.5">
+                <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full" style={{ background: s.color }} />
+                {s.me ? "YOU" : s.name}
+                {s.bot && <span className="text-dim"> (bot)</span>}
+              </td>
+              {brawl ? (
+                <>
+                  <td className="text-right text-yellow">{s.points}</td>
+                  <td className="text-right">{s.kos}</td>
+                  <td className="text-right">{s.falls}</td>
+                </>
+              ) : (
+                <>
+                  <td className="text-right text-yellow">{s.score}</td>
+                  <td className="text-right">{s.kills}</td>
+                </>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {role === "guest" ? (
+        <div className="mt-5 font-pixel text-[9px] text-cyan blink">WAITING FOR THE HOST…</div>
+      ) : (
+        <button onClick={onAgain} className="mt-5 block w-full bg-pink py-3 font-pixel text-[12px] text-bg active:scale-[0.98]">
+          ▶ PLAY AGAIN
+        </button>
+      )}
+      {onLobby && (
+        <button onClick={onLobby} className="mt-2 block w-full border-2 border-cyan py-2.5 font-pixel text-[9px] text-cyan">
+          BACK TO LOBBY
+        </button>
+      )}
+      <button onClick={onMenu} className="mt-2 block w-full border-2 border-line py-2.5 font-pixel text-[9px] text-dim">
+        {role === "solo" ? "MENU" : "LEAVE"}
+      </button>
+    </div>
+  );
+}
+
+function GameOver({ result, best, onAgain, onMenu }: { result: Result; best: number; onAgain: () => void; onMenu: () => void }) {
   const [name, setName] = useState("");
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "local" | "error">("idle");
   const [msg, setMsg] = useState("");
@@ -1021,6 +1443,9 @@ function GameOver({ result, best, onAgain }: { result: Result; best: number; onA
 
       <button onClick={onAgain} className="mt-4 block w-full bg-pink py-3 font-pixel text-[12px] text-bg active:scale-[0.98]">
         ▶ PLAY AGAIN
+      </button>
+      <button onClick={onMenu} className="mt-2 block w-full border-2 border-line py-2.5 font-pixel text-[9px] text-dim">
+        MENU
       </button>
     </div>
   );
