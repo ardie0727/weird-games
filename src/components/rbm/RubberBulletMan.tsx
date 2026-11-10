@@ -31,7 +31,7 @@ import {
 import { INPUT_MS, Mirror, PROTOCOL, SNAP_MS, cleanCode, encodeSnap, type GuestMsg, type HostMsg, type LobbySeat } from "@/lib/rbm/net";
 import { joinRoom, NetError, Room, type Link as NetLink } from "@/lib/rbm/rtc";
 import { play, unlock } from "@/lib/rbm/sound";
-import { DEAD, STICK, drawGame, type Stick } from "./draw";
+import { DEAD, STICK, camera, drawGame, type Stick } from "./draw";
 
 type Screen = "title" | "friends" | "connecting" | "lobby" | "play" | "over";
 type Role = "solo" | "host" | "guest";
@@ -653,8 +653,9 @@ export function RubberBulletMan() {
         ax = c.aim.x - c.aim.ox;
         ay = c.aim.y - c.aim.oy;
       } else if (c.mouse.active) {
-        ax = c.mouse.x / s - p.x;
-        ay = c.mouse.y / s - p.y;
+        const cam = camera(gameRef.current, p);
+        ax = c.mouse.x / s + cam.x - p.x;
+        ay = c.mouse.y / s + cam.y - p.y;
       }
       if (c.pending) {
         c.pending.t -= dt;
@@ -1074,6 +1075,10 @@ function BrawlHelp() {
       <p>
         First to {BRAWL_TARGET} points wins, or the leader when the 3-minute clock runs out. Bullet drops land every few seconds: Glue sticks a rival in place,
         Seekers hunt them down, and Bombs hurt everybody in the blast.
+      </p>
+      <p>
+        Spraying won&apos;t save you: online and in brawls your Bouncer holds 6 shots (the pips under your man), then you&apos;re stuck reloading. Stop firing and
+        it slowly refills. The arena is bigger too, and arrows at the screen edge point at rivals you can&apos;t see.
       </p>
       <p className="text-dim">Your shots wear a ring in your colour, so you can tell whose rubber is whose.</p>
     </div>

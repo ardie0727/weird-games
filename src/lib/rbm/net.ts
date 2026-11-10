@@ -23,7 +23,7 @@ import {
   type Sound,
 } from "./engine.ts";
 
-export const PROTOCOL = 1;
+export const PROTOCOL = 2;
 export const SNAP_MS = 50;
 export const INPUT_MS = 33;
 /** How far behind the newest snapshot a guest draws, so it always has two to blend. */
@@ -49,7 +49,7 @@ export type HostMsg =
   | { t: "bye" };
 
 // Compact arrays keep each snapshot to a few KB.
-type PRow = [number, number, string, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number[], number];
+type PRow = [number, number, string, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number[], number, number, number];
 type ERow = [number, number, number, number, number, number, number, number, number, number, number, number, number, number];
 type BRow = [number, number, number, number, number, number, number, number, number, number, number];
 
@@ -122,6 +122,8 @@ export function encodeSnap(g: Game, n: number, fx: Fx[], sounds: Sound[]): Snap 
       p.tp,
       KINDS.map((k) => inf(p.ammo[k])),
       p.bestChain,
+      p.mag,
+      r2(p.reload),
     ]),
     E: g.enemies.map((e) => [e.id, ENEMY_TYPES.indexOf(e.type), r1(e.x), r1(e.y), r1(e.vx), r1(e.vy), e.hp, e.maxHp, e.state, r2(e.t), r2(e.fire), r2(e.face), r2(e.frozen), e.flash > 0 ? 1 : 0]),
     B: g.bullets.map((b) => [b.id, KINDS.indexOf(b.kind), b.owner === "enemy" ? -1 : b.pid, r1(b.x), r1(b.y), Math.round(b.vx), Math.round(b.vy), b.r, (b.phased ? 1 : 0) | (b.mini ? 2 : 0), r2(b.age), b.bounces]),
@@ -252,6 +254,9 @@ export class Mirror {
         respawn: 0,
         fireSeq: 0,
         queued: 0,
+        mag: r[23] ?? 0,
+        reload: r[24] ?? 0,
+        regen: 0,
       };
       if (p.id === this.me) {
         // our own man is where we say he is, unless the host moved him (respawn, revive)

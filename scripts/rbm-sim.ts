@@ -1,7 +1,7 @@
 // Headless runs of Rubber Bullet Man: classic with a dumb auto-player, co-op with three,
 // and brawls between bots. Checks nothing throws, numbers stay sane and brawls finish.
 // Run: npm run test:rbm
-import { newGame, step, W, H, type Game, type Input } from "../src/lib/rbm/engine.ts";
+import { newGame, step, type Game, type Input } from "../src/lib/rbm/engine.ts";
 
 let fails = 0;
 const fail = (m: string) => (fails++, console.error("FAIL", m));
@@ -21,7 +21,7 @@ function auto(g: Game, id: number, t: number): Input {
 
 function sane(g: Game, label: string) {
   for (const p of g.players) {
-    if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || p.x < 0 || p.x > W || p.y < 0 || p.y > H) fail(`${label}: player out of bounds ${p.x},${p.y}`);
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || p.x < 0 || p.x > g.w || p.y < 0 || p.y > g.h) fail(`${label}: player out of bounds ${p.x},${p.y}`);
   }
   for (const b of g.bullets) if (!Number.isFinite(b.x)) fail(`${label}: NaN bullet`);
   for (const e of g.enemies) if (!Number.isFinite(e.x)) fail(`${label}: NaN enemy`);

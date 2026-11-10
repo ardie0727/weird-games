@@ -222,6 +222,10 @@ export interface Player {
   /** Shots asked for over the network, and a short window to fire one in. */
   fireSeq: number;
   queued: number;
+  /** Multiplayer only: rubber left in the magazine, time left reloading, and the slow top-up. */
+  mag: number;
+  reload: number;
+  regen: number;
 }
 
 export interface BrawlState {
@@ -249,6 +253,9 @@ export interface Game {
   particles: Particle[];
   pops: Pop[];
   layout: number;
+  /** Arena size. */
+  w: number;
+  h: number;
   obstacles: Rect[];
   bumpers: Bumper[];
   blasts: Blast[];
@@ -294,9 +301,18 @@ export const BRAWL_TARGET = 7;
 export const BRAWL_TIME = 180;
 const RESPAWN = 2.4;
 const FREEZE_PLAYER = 1.4;
+/** Multiplayer magazine: six Bouncers, then a reload. Specials don't use it. */
+export const MAG = 6;
+export const RELOAD = 1.3;
+const REGEN = 0.6;
+/** Brawl Bouncers fire slower, so fights come down to aim rather than volume. */
+const BRAWL_COOLDOWN = 1.5;
 const BRAWL_AMMO = (): Record<BulletKind, number> => ({ bouncer: Infinity, piercer: 1, splitter: 1, boomerang: 0, glue: 0, seeker: 0, bomb: 0 });
 
 interface Layout {
+  /** Arena size; the original arenas are one screen (360x600). */
+  w?: number;
+  h?: number;
   rects: Rect[];
   bumpers?: { x: number; y: number; r: number }[];
 }
@@ -377,11 +393,83 @@ export const LAYOUTS: Layout[] = [
       { x: 100, y: 400, r: 14 },
     ],
   },
+  // Big arenas (640x960) for co-op and brawls: the camera follows you around them.
+  {
+    w: 640,
+    h: 960,
+    rects: [
+      { x: 120, y: 200, w: 120, h: 18 },
+      { x: 400, y: 200, w: 120, h: 18 },
+      { x: 120, y: 742, w: 120, h: 18 },
+      { x: 400, y: 742, w: 120, h: 18 },
+      { x: 300, y: 400, w: 40, h: 160 },
+      { x: 60, y: 440, w: 18, h: 80 },
+      { x: 562, y: 440, w: 18, h: 80 },
+    ],
+    bumpers: [
+      { x: 320, y: 300, r: 20 },
+      { x: 320, y: 660, r: 20 },
+      { x: 170, y: 480, r: 16 },
+      { x: 470, y: 480, r: 16 },
+    ],
+  },
+  {
+    w: 640,
+    h: 960,
+    rects: [
+      { x: 130, y: 200, w: 44, h: 44 },
+      { x: 466, y: 200, w: 44, h: 44 },
+      { x: 130, y: 458, w: 44, h: 44 },
+      { x: 466, y: 458, w: 44, h: 44 },
+      { x: 130, y: 716, w: 44, h: 44 },
+      { x: 466, y: 716, w: 44, h: 44 },
+      { x: 250, y: 470, w: 140, h: 20 },
+    ],
+    bumpers: [
+      { x: 320, y: 250, r: 18 },
+      { x: 320, y: 710, r: 18 },
+    ],
+  },
+  {
+    w: 640,
+    h: 960,
+    rects: [
+      { x: 40, y: 470, w: 100, h: 18 },
+      { x: 500, y: 470, w: 100, h: 18 },
+    ],
+    bumpers: [
+      { x: 160, y: 250, r: 18 },
+      { x: 480, y: 250, r: 18 },
+      { x: 320, y: 380, r: 22 },
+      { x: 320, y: 580, r: 22 },
+      { x: 160, y: 710, r: 18 },
+      { x: 480, y: 710, r: 18 },
+    ],
+  },
+  {
+    w: 640,
+    h: 960,
+    rects: [
+      { x: 200, y: 120, w: 18, h: 260 },
+      { x: 422, y: 580, w: 18, h: 260 },
+      { x: 422, y: 180, w: 18, h: 140 },
+      { x: 200, y: 640, w: 18, h: 140 },
+      { x: 270, y: 470, w: 100, h: 18 },
+    ],
+    bumpers: [
+      { x: 110, y: 480, r: 16 },
+      { x: 530, y: 480, r: 16 },
+    ],
+  },
+  { w: 640, h: 960, rects: [], bumpers: [{ x: 320, y: 480, r: 22 }] },
 ];
-/** Arenas picked for a brawl: the ones with cover. */
-export const BRAWL_LAYOUTS = [3, 4, 5, 6, 7, 8];
+/** Arenas picked for a brawl. */
+export const BRAWL_LAYOUTS = [9, 10, 11, 12];
+/** Co-op arenas, rotating every third wave. */
+const COOP_LAYOUTS = [13, 9, 10, 11, 12];
 
-/** Player spawn spots for a brawl, corners first. */
+/** Player spawn spots for a brawl, corners first, stretched to the arena. */
+const brawlSpawns = (g: Pick<Game, "w" | "h">) => BRAWL_SPAWNS.map((s) => ({ x: (s.x * g.w) / W, y: (s.y * g.h) / H }));
 const BRAWL_SPAWNS = [
   { x: 50, y: 70 },
   { x: 310, y: 530 },
@@ -401,8 +489,8 @@ function makePlayer(g: Game, slot: number, seat: Seat): Player {
     slot,
     name: seat.name,
     color: PLAYER_COLORS[slot % PLAYER_COLORS.length],
-    x: W / 2,
-    y: H - 90,
+    x: g.w / 2,
+    y: g.h - 90,
     r: PLAYER_R,
     aimX: 0,
     aimY: -1,
@@ -426,6 +514,9 @@ function makePlayer(g: Game, slot: number, seat: Seat): Player {
     tp: 0,
     fireSeq: 0,
     queued: 0,
+    mag: MAG,
+    reload: 0,
+    regen: 0,
   };
 }
 
@@ -449,6 +540,8 @@ export function newGame(mode: Mode = "classic", seats: Seat[] = [{ name: "YOU" }
     particles: [],
     pops: [],
     layout: 0,
+    w: W,
+    h: H,
     obstacles: [],
     bumpers: [],
     blasts: [],
@@ -463,23 +556,24 @@ export function newGame(mode: Mode = "classic", seats: Seat[] = [{ name: "YOU" }
     fx: null,
     brawl: null,
   };
+  if (mode === "coop") setLayout(g, layout ?? COOP_LAYOUTS[0]);
+  if (mode === "brawl") setLayout(g, layout ?? BRAWL_LAYOUTS[Math.floor(Math.random() * BRAWL_LAYOUTS.length)]);
   const list = mode === "classic" ? seats.slice(0, 1) : seats.slice(0, MAX_PLAYERS);
   list.forEach((s, i) => g.players.push(makePlayer(g, i, s)));
   if (mode === "brawl") {
-    setLayout(g, layout ?? BRAWL_LAYOUTS[Math.floor(Math.random() * BRAWL_LAYOUTS.length)]);
     g.brawl = { target: BRAWL_TARGET, timeLeft: BRAWL_TIME, countdown: 3, dropT: 1.5, winner: null };
     g.players.forEach((p, i) => {
-      const s = BRAWL_SPAWNS[i];
+      const s = brawlSpawns(g)[i];
       p.x = s.x;
       p.y = s.y;
-      p.aimX = W / 2 - s.x;
-      p.aimY = H / 2 - s.y;
+      p.aimX = g.w / 2 - s.x;
+      p.aimY = g.h / 2 - s.y;
       collideWorld(g, p);
     });
     g.interT = 0;
   } else {
     const n = g.players.length;
-    g.players.forEach((p, i) => (p.x = W / 2 + (i - (n - 1) / 2) * 44));
+    g.players.forEach((p, i) => (p.x = g.w / 2 + (i - (n - 1) / 2) * 44));
   }
   return g;
 }
@@ -487,6 +581,8 @@ export function newGame(mode: Mode = "classic", seats: Seat[] = [{ name: "YOU" }
 export function setLayout(g: Game, i: number) {
   const lay = LAYOUTS[i % LAYOUTS.length];
   g.layout = i % LAYOUTS.length;
+  g.w = lay.w ?? W;
+  g.h = lay.h ?? H;
   g.obstacles = lay.rects;
   g.bumpers = (lay.bumpers ?? []).map((b) => ({ ...b, flash: 0 }));
 }
@@ -550,12 +646,12 @@ function reflect(o: { vx: number; vy: number }, nx: number, ny: number): boolean
 }
 
 /** Keep a circle inside the arena and out of obstacles. Returns the last wall normal hit, if any. */
-export function collideWorld(g: Pick<Game, "obstacles" | "bumpers">, o: { x: number; y: number; r: number }): { nx: number; ny: number; bumper?: Bumper } | null {
+export function collideWorld(g: Pick<Game, "obstacles" | "bumpers" | "w" | "h">, o: { x: number; y: number; r: number }): { nx: number; ny: number; bumper?: Bumper } | null {
   let hit: { nx: number; ny: number; bumper?: Bumper } | null = null;
   if (o.x < o.r) (o.x = o.r), (hit = { nx: 1, ny: 0 });
-  if (o.x > W - o.r) (o.x = W - o.r), (hit = { nx: -1, ny: 0 });
+  if (o.x > g.w - o.r) (o.x = g.w - o.r), (hit = { nx: -1, ny: 0 });
   if (o.y < o.r) (o.y = o.r), (hit = { nx: 0, ny: 1 });
-  if (o.y > H - o.r) (o.y = H - o.r), (hit = { nx: 0, ny: -1 });
+  if (o.y > g.h - o.r) (o.y = g.h - o.r), (hit = { nx: 0, ny: -1 });
   for (const ob of g.obstacles) {
     const c = circleRect(o.x, o.y, o.r, ob);
     if (c) {
@@ -580,7 +676,7 @@ export function collideWorld(g: Pick<Game, "obstacles" | "bumpers">, o: { x: num
 }
 
 /** Where a shot would go: points along its path, reflecting off walls and obstacles. */
-export function predictPath(g: Pick<Game, "obstacles" | "bumpers">, x: number, y: number, dx: number, dy: number, r: number, length = 320, maxBounces = 2): { x: number; y: number }[] {
+export function predictPath(g: Pick<Game, "obstacles" | "bumpers" | "w" | "h">, x: number, y: number, dx: number, dy: number, r: number, length = 320, maxBounces = 2): { x: number; y: number }[] {
   const len = Math.hypot(dx, dy) || 1;
   const o = { x, y, r, vx: dx / len, vy: dy / len };
   const pts = [{ x, y }];
@@ -599,7 +695,7 @@ export function predictPath(g: Pick<Game, "obstacles" | "bumpers">, x: number, y
 }
 
 /** Move a player by stick input, the same way on the host and on a guest's own screen. */
-export function movePlayer(g: Pick<Game, "obstacles" | "bumpers">, p: { x: number; y: number; r: number; walk: number }, mx: number, my: number, dt: number) {
+export function movePlayer(g: Pick<Game, "obstacles" | "bumpers" | "w" | "h">, p: { x: number; y: number; r: number; walk: number }, mx: number, my: number, dt: number) {
   const ml = Math.hypot(mx, my);
   if (ml > 0.05) {
     const s = Math.min(1, ml) / ml;
@@ -648,7 +744,7 @@ export function buildWave(n: number, rnd = Math.random, players = 1): EnemyType[
 function startWave(g: Game) {
   g.wave++;
   if (g.wave > 1 && g.wave % 3 === 1) {
-    setLayout(g, Math.floor(g.wave / 3) % 7);
+    setLayout(g, g.mode === "coop" ? COOP_LAYOUTS[Math.floor(g.wave / 3) % COOP_LAYOUTS.length] : Math.floor(g.wave / 3) % 7);
     for (const p of g.players) collideWorld(g, p);
   }
   g.queue = buildWave(g.wave, Math.random, g.players.length);
@@ -665,28 +761,28 @@ function farFromPlayers(g: Game, x: number, y: number, min: number) {
 function spawnPoint(g: Game, r: number): { x: number; y: number } {
   for (let i = 0; i < 40; i++) {
     const side = Math.floor(Math.random() * 4);
-    const x = side === 0 ? r + 4 : side === 1 ? W - r - 4 : r + Math.random() * (W - 2 * r);
+    const x = side === 0 ? r + 4 : side === 1 ? g.w - r - 4 : r + Math.random() * (g.w - 2 * r);
     // the top strip is kept clear for the score and hearts
-    const y = side === 2 ? 34 + r : side === 3 ? H - r - 4 : 34 + r + Math.random() * (H - 38 - 2 * r);
+    const y = side === 2 ? 34 + r : side === 3 ? g.h - r - 4 : 34 + r + Math.random() * (g.h - 38 - 2 * r);
     if (!farFromPlayers(g, x, y, i < 30 ? 150 : 90)) continue;
     if (g.obstacles.some((o) => circleRect(x, y, r + 4, o))) continue;
     if (g.bumpers.some((b) => Math.hypot(x - b.x, y - b.y) < b.r + r + 4)) continue;
     return { x, y };
   }
-  return { x: W / 2, y: 30 };
+  return { x: g.w / 2, y: 30 };
 }
 
 /** A free spot in the arena: clear of walls and bumpers, and at least `min` from every player. */
 function freeSpot(g: Game, r: number, min: number): { x: number; y: number } {
   for (let i = 0; i < 40; i++) {
-    const x = 20 + Math.random() * (W - 40);
-    const y = 50 + Math.random() * (H - 80);
+    const x = 20 + Math.random() * (g.w - 40);
+    const y = 50 + Math.random() * (g.h - 80);
     if (!farFromPlayers(g, x, y, i < 30 ? min : 0)) continue;
     if (g.obstacles.some((o) => circleRect(x, y, r + 6, o))) continue;
     if (g.bumpers.some((b) => Math.hypot(x - b.x, y - b.y) < b.r + r + 6)) continue;
     return { x, y };
   }
-  return { x: W / 2, y: H / 2 };
+  return { x: g.w / 2, y: g.h / 2 };
 }
 
 function makeEnemy(g: Game, type: EnemyType, x: number, y: number): Enemy {
@@ -785,6 +881,8 @@ function shoot(g: Game, p: Player): boolean {
   if (g.brawl && g.brawl.countdown > 0) return false;
   let kind = p.selected;
   if (p.ammo[kind] <= 0) kind = p.selected = "bouncer";
+  const magged = g.mode !== "classic" && kind === "bouncer";
+  if (magged && (p.reload > 0 || p.mag < 1)) return false;
   const info = BULLETS[kind];
   const len = Math.hypot(p.aimX, p.aimY) || 1;
   const dx = p.aimX / len, dy = p.aimY / len;
@@ -798,7 +896,12 @@ function shoot(g: Game, p: Player): boolean {
     if (collideWorld(g, { x: b.x, y: b.y, r: b.r })) (b.x = p.x), (b.y = p.y);
     g.bullets.push(b);
   }
-  p.cooldown = info.cooldown * (p.power.rapid > 0 ? 0.5 : 1);
+  p.cooldown = info.cooldown * (p.power.rapid > 0 ? 0.5 : 1) * (g.mode === "brawl" && kind === "bouncer" ? BRAWL_COOLDOWN : 1);
+  if (magged) {
+    p.mag--;
+    p.regen = 0;
+    if (p.mag < 1) p.reload = RELOAD * (p.power.rapid > 0 ? 0.5 : 1);
+  }
   if (kind !== "bouncer") {
     p.ammo[kind]--;
     if (p.ammo[kind] <= 0) p.selected = "bouncer";
@@ -883,9 +986,9 @@ function endBrawl(g: Game) {
 
 function respawnPlayer(g: Game, p: Player) {
   // the spawn spot furthest from everyone still standing
-  let best = BRAWL_SPAWNS[0];
+  let best = brawlSpawns(g)[0];
   let bd = -1;
-  for (const s of BRAWL_SPAWNS) {
+  for (const s of brawlSpawns(g)) {
     let d = Infinity;
     for (const q of g.players) if (q !== p && !q.down) d = Math.min(d, Math.hypot(q.x - s.x, q.y - s.y));
     for (const b of g.bullets) d = Math.min(d, Math.hypot(b.x - s.x, b.y - s.y) * 2);
@@ -899,6 +1002,8 @@ function respawnPlayer(g: Game, p: Player) {
   p.invuln = 1.6;
   p.ammo = BRAWL_AMMO();
   p.selected = "bouncer";
+  p.mag = MAG;
+  p.reload = 0;
   p.tp++;
   burst(g, p.x, p.y, p.color, 16, 120);
 }
@@ -1171,6 +1276,16 @@ export function step(g: Game, inputs: Input | Record<number, Input>, dt: number)
   for (const p of g.players) {
     const input = p.bot ? botInput(g, p, dt) : (byId[p.id] ?? NO_INPUT);
     p.cooldown -= dt;
+    if (p.reload > 0) {
+      if ((p.reload -= dt) <= 0) {
+        p.reload = 0;
+        p.mag = MAG;
+      }
+    } else if (p.mag < MAG && (p.regen += dt) >= REGEN) {
+      // a round trickles back in while you hold fire
+      p.regen = 0;
+      p.mag++;
+    }
     p.invuln -= dt;
     p.power.rapid = Math.max(0, p.power.rapid - dt);
     p.power.triple = Math.max(0, p.power.triple - dt);
@@ -1584,8 +1699,8 @@ function botInput(g: Game, p: Player, dt: number): Input {
     mx = (dx / td) * want + (-dy / td) * br.strafe * 0.8;
     my = (dy / td) * want + (dx / td) * br.strafe * 0.8;
   } else {
-    mx = (W / 2 - p.x) / 100;
-    my = (H / 2 - p.y) / 100;
+    mx = (g.w / 2 - p.x) / 100;
+    my = (g.h / 2 - p.y) / 100;
   }
   // grab a pickup if one's close
   let pk: Pickup | null = null;
@@ -1618,9 +1733,9 @@ function botInput(g: Game, p: Player, dt: number): Input {
   }
   // stay off the walls
   if (p.x < 30) mx += 0.8;
-  if (p.x > W - 30) mx -= 0.8;
+  if (p.x > g.w - 30) mx -= 0.8;
   if (p.y < 40) my += 0.8;
-  if (p.y > H - 30) my -= 0.8;
+  if (p.y > g.h - 30) my -= 0.8;
 
   let ax = p.aimX, ay = p.aimY;
   let fire = false;

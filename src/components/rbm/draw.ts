@@ -1,6 +1,6 @@
 // Drawing for Rubber Bullet Man: one frame of a Game on the canvas.
 
-import { BLAST_R, BULLETS, H, MAX_HEARTS, MIRROR_ARC, POWERS, POWER_KINDS, W, enemyColor, isBoss, nearestPlayer, predictPath, type BulletKind, type Game, type Player } from "@/lib/rbm/engine";
+import { BLAST_R, BULLETS, H, MAG, MAX_HEARTS, RELOAD, MIRROR_ARC, POWERS, POWER_KINDS, W, enemyColor, isBoss, nearestPlayer, predictPath, type BulletKind, type Game, type Player } from "@/lib/rbm/engine";
 
 export interface Stick {
   id: number | null;
@@ -26,6 +26,13 @@ export interface DrawOpts {
   scale: number;
 }
 
+/** Top-left of the screen in the world: big arenas scroll to keep your man in view. */
+export function camera(g: Pick<Game, "w" | "h">, me: { x: number; y: number } | null): { x: number; y: number } {
+  if (!me) return { x: Math.max(0, (g.w - W) / 2), y: Math.max(0, (g.h - H) / 2) };
+  const clamp = (v: number, hi: number) => Math.max(0, Math.min(hi, v));
+  return { x: clamp(me.x - W / 2, g.w - W), y: clamp(me.y - H * 0.55, g.h - H) };
+}
+
 export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, g: Game, o: DrawOpts) {
   const { font, me } = o;
   const s = canvas.width / W;
@@ -34,19 +41,20 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
   cx.fillStyle = "#07051a";
   cx.fillRect(0, 0, canvas.width, canvas.height);
   const sh = g.shake;
-  cx.setTransform(s, 0, 0, s, sh ? (Math.random() - 0.5) * sh * s : 0, sh ? (Math.random() - 0.5) * sh * s : 0);
+  const cam = camera(g, me);
+  cx.setTransform(s, 0, 0, s, (sh ? (Math.random() - 0.5) * sh : 0) * s - cam.x * s, (sh ? (Math.random() - 0.5) * sh : 0) * s - cam.y * s);
   const t = g.time;
 
   // floor grid
   cx.strokeStyle = "rgba(42,35,80,0.55)";
   cx.lineWidth = 1;
   cx.beginPath();
-  for (let x = 30; x < W; x += 30) cx.moveTo(x, 0), cx.lineTo(x, H);
-  for (let y = 30; y < H; y += 30) cx.moveTo(0, y), cx.lineTo(W, y);
+  for (let x = 30; x < g.w; x += 30) cx.moveTo(x, 0), cx.lineTo(x, g.h);
+  for (let y = 30; y < g.h; y += 30) cx.moveTo(0, y), cx.lineTo(g.w, y);
   cx.stroke();
   cx.strokeStyle = g.mode === "brawl" ? "#ff2bd6" : "#22f3ff";
   cx.lineWidth = 3;
-  cx.strokeRect(1.5, 1.5, W - 3, H - 3);
+  cx.strokeRect(1.5, 1.5, g.w - 3, g.h - 3);
 
   for (const ob of g.obstacles) {
     cx.fillStyle = "#1b1440";
@@ -131,7 +139,7 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
   // enemies
   for (const e of g.enemies) {
     const col = enemyColor(e.type);
-    const look = nearestPlayer(g, e.x, e.y) ?? me ?? { x: W / 2, y: H };
+    const look = nearestPlayer(g, e.x, e.y) ?? me ?? { x: g.w / 2, y: g.h };
     if (e.type === "dasher" && e.state === 0 && e.t < 0.6) {
       cx.strokeStyle = "rgba(255,138,61,0.5)";
       cx.setLineDash([4, 4]);
@@ -370,6 +378,7 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
 
   // HUD
   cx.setTransform(s, 0, 0, s, 0, 0);
+  if (g.w > W || g.h > H) drawPointers(cx, g, me, cam, t);
   if (o.hud) drawHud(cx, g, me, font);
   if (g.banner && o.playing) {
     cx.textAlign = "center";
@@ -414,6 +423,37 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
     cx.beginPath();
     cx.arc(st.ox + dx, st.oy + dy, 20, 0, Math.PI * 2);
     cx.fill();
+    cx.globalAlpha = 1;
+  }
+}
+
+/** Arrows at the screen edge pointing at rivals (and bosses) that are off screen. */
+function drawPointers(cx: CanvasRenderingContext2D, g: Game, me: Player | null, cam: { x: number; y: number }, t: number) {
+  const marks: { x: number; y: number; color: string; big: boolean }[] = [];
+  for (const p of g.players) if (p !== me && !p.down) marks.push({ x: p.x, y: p.y, color: p.color, big: false });
+  for (const e of g.enemies) if (isBoss(e.type)) marks.push({ x: e.x, y: e.y, color: enemyColor(e.type), big: true });
+  const cxm = W / 2, cym = H / 2;
+  for (const m of marks) {
+    const sx = m.x - cam.x, sy = m.y - cam.y;
+    if (sx > 0 && sx < W && sy > 30 && sy < H) continue;
+    const dx = sx - cxm, dy = sy - cym;
+    // where the line from the middle of the screen leaves it
+    const k = Math.min(Math.abs((W / 2 - 14) / (dx || 1e-6)), Math.abs((H / 2 - 40) / (dy || 1e-6)));
+    const ex = cxm + dx * k, ey = cym + dy * k;
+    const a = Math.atan2(dy, dx);
+    const r = m.big ? 9 : 7;
+    cx.save();
+    cx.translate(ex, ey);
+    cx.rotate(a);
+    cx.globalAlpha = 0.75 + Math.sin(t * 6) * 0.2;
+    cx.fillStyle = m.color;
+    cx.beginPath();
+    cx.moveTo(r, 0);
+    cx.lineTo(-r * 0.8, -r * 0.75);
+    cx.lineTo(-r * 0.8, r * 0.75);
+    cx.closePath();
+    cx.fill();
+    cx.restore();
     cx.globalAlpha = 1;
   }
 }
@@ -489,6 +529,29 @@ function drawMan(cx: CanvasRenderingContext2D, g: Game, p: Player, mine: boolean
     cx.fillStyle = p.color;
     cx.fillText(label, p.x, p.y - p.r - 10);
     if (!mine) for (let i = 0; i < p.hearts; i++) drawHeart(cx, p.x - (p.hearts - 1) * 4 + i * 8, p.y + p.r + 9, 2.6, "#ff4d6d");
+  }
+  if (g.mode !== "classic") {
+    // the magazine: six pips, or a filling bar while reloading
+    const y = p.y + p.r + (mine ? 8 : 14);
+    if (p.reload > 0) {
+      const k = 1 - p.reload / RELOAD;
+      cx.fillStyle = "#2a2350";
+      cx.fillRect(p.x - 12, y - 1.5, 24, 3);
+      cx.fillStyle = "#ece9ff";
+      cx.fillRect(p.x - 12, y - 1.5, 24 * Math.max(0, Math.min(1, k)), 3);
+      if (mine) {
+        cx.font = font(5);
+        cx.textAlign = "center";
+        cx.textBaseline = "middle";
+        cx.fillStyle = Math.floor(t * 6) % 2 ? "#ff4d6d" : "#ece9ff";
+        cx.fillText("RELOAD", p.x, y + 7);
+      }
+    } else if (mine || p.mag < MAG) {
+      for (let i = 0; i < MAG; i++) {
+        cx.fillStyle = i < p.mag ? BULLETS.bouncer.color : "#2a2350";
+        cx.fillRect(p.x - MAG * 2 + i * 4, y - 1.5, 3, 3);
+      }
+    }
   }
 }
 
