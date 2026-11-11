@@ -12,9 +12,6 @@ Odd little browser games. The first one is **Query Arcade**: a fast, retro arcad
 - `/down-the-couch` is Down the Couch: a roguelite card RPG. Four heroes, four areas with bosses, a branching map,
   shops, campfires, events, trinkets and level-ups. Runs and Junk Drawer upgrades save in the browser (no server).
   `npm run test:dtc` plays hundreds of bot runs to catch stuck states and check balance.
-- `/conga-crawl` is Conga Crawl: a real-time roguelike where you steer a wedding conga line down nine floors.
-  Guests join the line and fight on their own; three bosses, perks between floors, unlockable leaders (saved in the browser).
-  `npm run test:conga` plays bot runs (`-- <runs> <lateness>`) to catch stuck floors and check balance.
 
 ## Query Arcade in one minute
 
