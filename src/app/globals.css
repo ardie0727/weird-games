@@ -346,9 +346,9 @@ textarea.sql {
   }
 }
 
-/* ---------- Rubber Bullet Man: paper (light) theme ---------- */
+/* ---------- Site-wide paper (light) theme ---------- */
 /* The pink accent stays the same in both themes; everything else flips. */
-html[data-rbm-theme="light"] {
+html[data-theme="light"] {
   color-scheme: light;
   --color-bg: #efe6d3;
   --color-cab: #e6dbc4;
@@ -363,12 +363,40 @@ html[data-rbm-theme="light"] {
   --color-orange: #c4581a;
   --color-purple: #6f3cc6;
 }
-html[data-rbm-theme="light"] .neon,
-html[data-rbm-theme="light"] .neon-soft {
+html[data-theme="light"] .neon,
+html[data-theme="light"] .neon-soft {
   text-shadow: 1px 1px 0 color-mix(in srgb, currentColor 22%, transparent);
 }
-html[data-rbm-theme="light"] .neon-box {
+html[data-theme="light"] .neon-box {
   box-shadow:
     0 0 0 2px #141210,
     5px 5px 0 0 color-mix(in srgb, var(--glow, #22f3ff) 85%, transparent);
 }
+
+html[data-theme="light"] [class*="bg-[radial-gradient"] {
+  background: radial-gradient(ellipse at top, #fffaf0 0%, #efe6d3 65%) !important;
+}
+html[data-theme="light"] .stars { opacity: 0.12; filter: invert(1); }
+html[data-theme="light"] .crt-overlay { opacity: 0.35; }
+
+/* ---------- Pixel flip: the live new page shows through a growing grid mask ---------- */
+html.px-flipping::view-transition-old(root),
+html.px-flipping::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+html.px-flipping::view-transition-new(root) {
+  -webkit-mask-image: var(--px-mask);
+  mask-image: var(--px-mask);
+  -webkit-mask-size: var(--px-w) var(--px-h);
+  mask-size: var(--px-w) var(--px-h);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: 0 0;
+  mask-position: 0 0;
+  animation: px-hold var(--px-time, 1s) linear;
+}
+html.px-flipping::view-transition-old(root) {
+  animation: px-hold var(--px-time, 1s) linear;
+}
+@keyframes px-hold { from { opacity: 1; } to { opacity: 1; } }

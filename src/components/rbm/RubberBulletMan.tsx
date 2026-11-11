@@ -32,7 +32,7 @@ import { INPUT_MS, Mirror, PROTOCOL, SNAP_MS, cleanCode, encodeSnap, type GuestM
 import { joinRoom, NetError, Room, type Link as NetLink } from "@/lib/rbm/rtc";
 import { play, unlock } from "@/lib/rbm/sound";
 import { DEAD, STICK, camera, drawGame, type Stick, type Theme } from "./draw";
-import { applyTheme, pixelFlip, savedTheme } from "./themeFlip";
+import { currentTheme, flipTheme as flipSiteTheme, onThemeChange } from "@/lib/client/theme";
 
 type Screen = "title" | "friends" | "connecting" | "lobby" | "play" | "over";
 type Role = "solo" | "host" | "guest";
@@ -104,18 +104,14 @@ export function RubberBulletMan() {
   const themeRef = useRef<Theme>("dark");
   const themeBtn = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    const t = savedTheme();
-    themeRef.current = t;
-    setThemeState(t);
-    applyTheme(t);
-    // the rest of the site stays in its own (dark) look
-    return () => void delete document.documentElement.dataset.rbmTheme;
-  }, []);
-  const flipTheme = () =>
-    pixelFlip(themeRef.current === "dark" ? "light" : "dark", themeBtn.current, (t) => {
+    const sync = (t: Theme) => {
       themeRef.current = t;
       setThemeState(t);
-    });
+    };
+    sync(currentTheme());
+    return onThemeChange(sync);
+  }, []);
+  const flipTheme = () => flipSiteTheme(themeBtn.current);
   const [hud, setHud] = useState<{ selected: BulletKind; ammo: Record<BulletKind, number> }>(() => ({ selected: "bouncer", ammo: newGame().players[0].ammo }));
   const [result, setResult] = useState<Result | null>(null);
   const [multi, setMulti] = useState<MultiResult | null>(null);

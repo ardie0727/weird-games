@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Press_Start_2P, VT323 } from "next/font/google";
 import { BootScreen } from "@/components/site/BootScreen";
+import { ThemeToggle } from "@/components/site/ThemeToggle";
+import { THEME_BOOT } from "@/lib/client/theme";
 import "./globals.css";
 
 const press = Press_Start_2P({ weight: "400", subsets: ["latin"], variable: "--font-press", display: "swap" });
@@ -24,11 +26,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${press.variable} ${vt.variable} ${mono.variable}`} suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
         <script dangerouslySetInnerHTML={{ __html: `try{if(sessionStorage.getItem("wg-booted"))document.documentElement.classList.add("booted")}catch(e){}` }} />
       </head>
       <body className="min-h-dvh antialiased">
         <BootScreen />
         {children}
+        <ThemeToggle />
       </body>
     </html>
   );
