@@ -31,7 +31,8 @@ import {
 import { INPUT_MS, Mirror, PROTOCOL, SNAP_MS, cleanCode, encodeSnap, type GuestMsg, type HostMsg, type LobbySeat } from "@/lib/rbm/net";
 import { joinRoom, NetError, Room, type Link as NetLink } from "@/lib/rbm/rtc";
 import { play, unlock } from "@/lib/rbm/sound";
-import { DEAD, STICK, camera, drawGame, type Stick } from "./draw";
+import { DEAD, STICK, camera, drawGame, type Stick, type Theme } from "./draw";
+import { applyTheme, inkFlip, savedTheme } from "./inkFlip";
 
 type Screen = "title" | "friends" | "connecting" | "lobby" | "play" | "over";
 type Role = "solo" | "host" | "guest";
@@ -99,6 +100,22 @@ export function RubberBulletMan() {
   const [role, setRoleState] = useState<Role>("solo");
   const [paused, setPaused] = useState(false);
   const [muted, setMutedState] = useState(false);
+  const [theme, setThemeState] = useState<Theme>("dark");
+  const themeRef = useRef<Theme>("dark");
+  const themeBtn = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const t = savedTheme();
+    themeRef.current = t;
+    setThemeState(t);
+    applyTheme(t);
+    // the rest of the site stays in its own (dark) look
+    return () => void delete document.documentElement.dataset.rbmTheme;
+  }, []);
+  const flipTheme = () =>
+    inkFlip(themeRef.current === "dark" ? "light" : "dark", themeBtn.current, (t) => {
+      themeRef.current = t;
+      setThemeState(t);
+    });
   const [hud, setHud] = useState<{ selected: BulletKind; ammo: Record<BulletKind, number> }>(() => ({ selected: "bouncer", ammo: newGame().players[0].ammo }));
   const [result, setResult] = useState<Result | null>(null);
   const [multi, setMulti] = useState<MultiResult | null>(null);
@@ -813,6 +830,7 @@ export function RubberBulletMan() {
         aim: { aiming, mouse: c.mouse.active },
         sticks: { move: c.move, aim: c.aim },
         scale: scaleRef.current,
+        theme: themeRef.current,
       });
     };
 
@@ -830,7 +848,18 @@ export function RubberBulletMan() {
           ◀ HUB
         </Link>
         <div className="font-pixel text-[9px] text-pink neon-soft">RUBBER BULLET MAN</div>
-        <div className="flex gap-3">
+        <div className="flex items-center gap-3">
+          <button
+            ref={themeBtn}
+            onClick={flipTheme}
+            aria-label={theme === "dark" ? "Switch to paper (light) mode" : "Switch to dark mode"}
+            title={theme === "dark" ? "Paper mode" : "Dark mode"}
+            className="relative block h-5 w-5 overflow-hidden rounded-full border-2 border-ink"
+          >
+            {/* half-filled disc: the side you'd switch to */}
+            <span className="absolute inset-y-0 right-0 w-1/2 bg-ink" />
+            <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-pink" />
+          </button>
           <button className="font-pixel text-[9px] text-dim" onClick={() => setMuted(!muted)} aria-label={muted ? "Unmute" : "Mute"}>
             {muted ? "🔇" : "🔊"}
           </button>

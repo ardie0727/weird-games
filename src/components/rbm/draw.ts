@@ -24,7 +24,43 @@ export interface DrawOpts {
   sticks: { move: Stick; aim: Stick };
   /** CSS px per world unit. */
   scale: number;
+  theme?: Theme;
 }
+
+export type Theme = "dark" | "light";
+
+/** Canvas colours. The pink accent (borders, bumpers) is the same in both, like a signature. */
+const PALETTES = {
+  dark: {
+    bg: "#07051a",
+    grid: "rgba(42,35,80,0.55)",
+    obFill: "#1b1440",
+    obStroke: "#22f3ff",
+    bumper: "#2a0f3a",
+    ink: "#ece9ff",
+    shadow: "#05040b",
+    empty: "#2a2350",
+    ground: "#3a2a00",
+    info: "#22f3ff",
+    score: "#ffe14d",
+    outline: "",
+  },
+  light: {
+    bg: "#f1e8d6",
+    grid: "rgba(110,84,50,0.16)",
+    obFill: "#fffaf0",
+    obStroke: "#141210",
+    bumper: "#ffe3f7",
+    ink: "#141210",
+    shadow: "rgba(255,250,240,0.95)",
+    empty: "#d9ccb2",
+    ground: "rgba(60,40,10,0.22)",
+    info: "#141210",
+    score: "#141210",
+    outline: "#141210",
+  },
+};
+let P = PALETTES.dark;
 
 /** Top-left of the screen in the world: big arenas scroll to keep your man in view. */
 export function camera(g: Pick<Game, "w" | "h">, me: { x: number; y: number } | null): { x: number; y: number } {
@@ -35,10 +71,11 @@ export function camera(g: Pick<Game, "w" | "h">, me: { x: number; y: number } | 
 
 export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, g: Game, o: DrawOpts) {
   const { font, me } = o;
+  P = PALETTES[o.theme ?? "dark"];
   const s = canvas.width / W;
   const multi = g.players.length > 1 || g.mode !== "classic";
   cx.setTransform(1, 0, 0, 1, 0, 0);
-  cx.fillStyle = "#07051a";
+  cx.fillStyle = P.bg;
   cx.fillRect(0, 0, canvas.width, canvas.height);
   const sh = g.shake;
   const cam = camera(g, me);
@@ -46,7 +83,7 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
   const t = g.time;
 
   // floor grid
-  cx.strokeStyle = "rgba(42,35,80,0.55)";
+  cx.strokeStyle = P.grid;
   cx.lineWidth = 1;
   cx.beginPath();
   for (let x = 30; x < g.w; x += 30) cx.moveTo(x, 0), cx.lineTo(x, g.h);
@@ -57,9 +94,9 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
   cx.strokeRect(1.5, 1.5, g.w - 3, g.h - 3);
 
   for (const ob of g.obstacles) {
-    cx.fillStyle = "#1b1440";
+    cx.fillStyle = P.obFill;
     cx.fillRect(ob.x, ob.y, ob.w, ob.h);
-    cx.strokeStyle = "#22f3ff";
+    cx.strokeStyle = P.obStroke;
     cx.lineWidth = 2;
     cx.strokeRect(ob.x + 1, ob.y + 1, ob.w - 2, ob.h - 2);
   }
@@ -67,7 +104,7 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
   // pinball bumpers
   for (const bp of g.bumpers) {
     const lit = bp.flash > 0;
-    cx.fillStyle = lit ? "#ff2bd6" : "#2a0f3a";
+    cx.fillStyle = lit ? "#ff2bd6" : P.bumper;
     cx.beginPath();
     cx.arc(bp.x, bp.y, lit ? bp.r + 2 : bp.r, 0, Math.PI * 2);
     cx.fill();
@@ -155,6 +192,7 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
     cx.beginPath();
     cx.ellipse(e.x, e.y, e.r * squish, e.r / squish, 0, 0, Math.PI * 2);
     cx.fill();
+    inkLine(cx);
     if (e.type === "brute") {
       cx.strokeStyle = "#ffd0da";
       cx.lineWidth = 2;
@@ -189,7 +227,7 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
         cx.fill();
       }
       // a bubble wand
-      cx.strokeStyle = "#ece9ff";
+      cx.strokeStyle = P.ink;
       cx.lineWidth = 2;
       cx.beginPath();
       cx.moveTo(e.x + 24, e.y + 6);
@@ -257,7 +295,7 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
     }
     if (e.maxHp > 1) {
       const wv = e.r * 2;
-      cx.fillStyle = "#2a2350";
+      cx.fillStyle = P.empty;
       cx.fillRect(e.x - wv / 2, e.y + e.r + 4, wv, 3);
       cx.fillStyle = col;
       cx.fillRect(e.x - wv / 2, e.y + e.r + 4, (wv * Math.max(0, e.hp)) / e.maxHp, 3);
@@ -298,7 +336,7 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
     cx.fill();
     cx.globalAlpha = 1;
     if (b.kind === "bomb" && b.owner === "player") {
-      cx.fillStyle = "#1b1440";
+      cx.fillStyle = P.obFill;
       cx.beginPath();
       cx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
       cx.fill();
@@ -320,6 +358,7 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
       cx.beginPath();
       cx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
       cx.fill();
+      inkLine(cx);
       cx.fillStyle = "#fff";
       cx.beginPath();
       cx.arc(b.x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.35, 0, Math.PI * 2);
@@ -369,8 +408,15 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
   for (const pp of g.pops) {
     cx.globalAlpha = Math.min(1, 2 - pp.t * 2);
     cx.font = font(7);
-    cx.fillStyle = "#05040b";
-    cx.fillText(pp.text, pp.x + 1, pp.y + 1);
+    if (P.outline) {
+      cx.strokeStyle = P.outline;
+      cx.lineWidth = 2.5;
+      cx.lineJoin = "round";
+      cx.strokeText(pp.text, pp.x, pp.y);
+    } else {
+      cx.fillStyle = P.shadow;
+      cx.fillText(pp.text, pp.x + 1, pp.y + 1);
+    }
     cx.fillStyle = pp.color;
     cx.fillText(pp.text, pp.x, pp.y);
   }
@@ -384,13 +430,13 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
     cx.textAlign = "center";
     cx.textBaseline = "middle";
     cx.font = font(22);
-    cx.fillStyle = "#05040b";
+    cx.fillStyle = P.shadow;
     cx.fillText(g.banner.text, W / 2 + 2, H * 0.38 + 2);
     cx.fillStyle = g.banner.text === "BOSS WAVE" || g.banner.text === "BRAWL!" ? "#ff2bd6" : "#ffe14d";
     cx.fillText(g.banner.text, W / 2, H * 0.38);
     if (g.banner.sub) {
       cx.font = font(10);
-      cx.fillStyle = "#ece9ff";
+      cx.fillStyle = P.ink;
       cx.fillText(g.banner.sub, W / 2, H * 0.38 + 28);
     }
   }
@@ -398,7 +444,7 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
     cx.textAlign = "center";
     cx.textBaseline = "middle";
     cx.font = font(9);
-    cx.fillStyle = "#ece9ff";
+    cx.fillStyle = P.ink;
     cx.fillText(g.mode === "brawl" ? "KO! RESPAWNING..." : "YOU'RE DOWN. BACK NEXT WAVE", W / 2, H * 0.55);
   }
 
@@ -407,7 +453,7 @@ export function drawGame(cx: CanvasRenderingContext2D, canvas: HTMLCanvasElement
   cx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const selColor = me ? BULLETS[me.selected].color : BULLETS.bouncer.color;
   for (const [st, col] of [
-    [o.sticks.move, "#ece9ff"],
+    [o.sticks.move, P.ink],
     [o.sticks.aim, selColor],
   ] as const) {
     if (st.id === null) continue;
@@ -458,6 +504,14 @@ function drawPointers(cx: CanvasRenderingContext2D, g: Game, me: Player | null, 
   }
 }
 
+/** On paper, bodies get a thin ink outline so neon colours still read. */
+function inkLine(cx: CanvasRenderingContext2D) {
+  if (!P.outline) return;
+  cx.strokeStyle = P.outline;
+  cx.lineWidth = 1.5;
+  cx.stroke();
+}
+
 function drawMan(cx: CanvasRenderingContext2D, g: Game, p: Player, mine: boolean, multi: boolean, font: (px: number) => string, t: number) {
   if (p.down) {
     if (g.over || g.mode === "brawl") return;
@@ -479,7 +533,7 @@ function drawMan(cx: CanvasRenderingContext2D, g: Game, p: Player, mine: boolean
     const len = Math.hypot(p.aimX, p.aimY) || 1;
     const ax = p.aimX / len, ay = p.aimY / len;
     const bob = Math.sin(p.walk) * 1.5;
-    cx.fillStyle = "#3a2a00";
+    cx.fillStyle = P.ground;
     cx.beginPath();
     cx.ellipse(p.x, p.y + p.r + 2, p.r, 3, 0, 0, Math.PI * 2);
     cx.fill();
@@ -496,6 +550,7 @@ function drawMan(cx: CanvasRenderingContext2D, g: Game, p: Player, mine: boolean
     cx.beginPath();
     cx.arc(p.x, p.y + bob, p.r, 0, Math.PI * 2);
     cx.fill();
+    inkLine(cx);
     cx.fillStyle = p.color === "#ff2bd6" ? "#ffe14d" : "#ff2bd6";
     cx.fillRect(p.x - p.r, p.y - 3 + bob, p.r * 2, 3); // headband
     cx.fillStyle = "#05040b";
@@ -524,8 +579,15 @@ function drawMan(cx: CanvasRenderingContext2D, g: Game, p: Player, mine: boolean
     cx.textBaseline = "middle";
     cx.font = font(6);
     const label = mine ? "YOU" : p.name;
-    cx.fillStyle = "#05040b";
-    cx.fillText(label, p.x + 1, p.y - p.r - 9);
+    if (P.outline) {
+      cx.strokeStyle = P.outline;
+      cx.lineWidth = 2.5;
+      cx.lineJoin = "round";
+      cx.strokeText(label, p.x, p.y - p.r - 10);
+    } else {
+      cx.fillStyle = P.shadow;
+      cx.fillText(label, p.x + 1, p.y - p.r - 9);
+    }
     cx.fillStyle = p.color;
     cx.fillText(label, p.x, p.y - p.r - 10);
     if (!mine) for (let i = 0; i < p.hearts; i++) drawHeart(cx, p.x - (p.hearts - 1) * 4 + i * 8, p.y + p.r + 9, 2.6, "#ff4d6d");
@@ -535,20 +597,20 @@ function drawMan(cx: CanvasRenderingContext2D, g: Game, p: Player, mine: boolean
     const y = p.y + p.r + (mine ? 8 : 14);
     if (p.reload > 0) {
       const k = 1 - p.reload / RELOAD;
-      cx.fillStyle = "#2a2350";
+      cx.fillStyle = P.empty;
       cx.fillRect(p.x - 12, y - 1.5, 24, 3);
-      cx.fillStyle = "#ece9ff";
+      cx.fillStyle = P.ink;
       cx.fillRect(p.x - 12, y - 1.5, 24 * Math.max(0, Math.min(1, k)), 3);
       if (mine) {
         cx.font = font(5);
         cx.textAlign = "center";
         cx.textBaseline = "middle";
-        cx.fillStyle = Math.floor(t * 6) % 2 ? "#ff4d6d" : "#ece9ff";
+        cx.fillStyle = Math.floor(t * 6) % 2 ? "#ff4d6d" : P.ink;
         cx.fillText("RELOAD", p.x, y + 7);
       }
     } else if (mine || p.mag < MAG) {
       for (let i = 0; i < MAG; i++) {
-        cx.fillStyle = i < p.mag ? BULLETS.bouncer.color : "#2a2350";
+        cx.fillStyle = i < p.mag ? BULLETS.bouncer.color : P.empty;
         cx.fillRect(p.x - MAG * 2 + i * 4, y - 1.5, 3, 3);
       }
     }
@@ -566,26 +628,26 @@ function drawHud(cx: CanvasRenderingContext2D, g: Game, me: Player | null, font:
       cx.fillStyle = p.color;
       cx.fillRect(x, 11, 7, 7);
       const label = `${p.points}`;
-      cx.fillStyle = p === me ? "#ffffff" : p.color;
+      cx.fillStyle = p === me ? P.ink : p.color;
       cx.fillText(label, x + 10, 11);
       x += 22 + cx.measureText(label).width;
     }
     const tl = Math.ceil(g.brawl.timeLeft);
     cx.textAlign = "center";
-    cx.fillStyle = tl <= 15 && Math.floor(g.time * 4) % 2 ? "#ff4d6d" : "#22f3ff";
+    cx.fillStyle = tl <= 15 && Math.floor(g.time * 4) % 2 ? "#ff4d6d" : P.info;
     cx.fillText(`${Math.floor(tl / 60)}:${String(tl % 60).padStart(2, "0")}`, W / 2 + 30, 12);
   } else {
     cx.font = font(10);
     cx.textAlign = "left";
-    cx.fillStyle = "#ffe14d";
+    cx.fillStyle = P.score;
     cx.fillText(String(g.score).padStart(6, "0"), 10, 10);
     cx.textAlign = "center";
-    cx.fillStyle = "#22f3ff";
+    cx.fillStyle = P.info;
     cx.font = font(8);
     cx.fillText(`WAVE ${Math.max(1, g.wave)}`, W / 2, 12);
   }
   if (!me) return;
-  for (let i = 0; i < MAX_HEARTS; i++) drawHeart(cx, W - 16 - i * 18, 16, 6, i < me.hearts ? "#ff4d6d" : "#2a2350");
+  for (let i = 0; i < MAX_HEARTS; i++) drawHeart(cx, W - 16 - i * 18, 16, 6, i < me.hearts ? "#ff4d6d" : P.empty);
   // active power-ups, under the score
   cx.font = font(7);
   cx.textAlign = "left";

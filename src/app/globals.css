@@ -345,3 +345,43 @@ textarea.sql {
     animation-delay: 0s !important;
   }
 }
+
+/* ---------- Rubber Bullet Man: paper (light) theme and the ink-splat switch ---------- */
+/* The pink accent stays the same in both themes; everything else flips. */
+html[data-rbm-theme="light"] {
+  color-scheme: light;
+  --color-bg: #efe6d3;
+  --color-cab: #e6dbc4;
+  --color-panel: #fffaf0;
+  --color-line: #d6c7aa;
+  --color-ink: #141210;
+  --color-dim: #6f6352;
+  --color-cyan: #0a7f8f;
+  --color-yellow: #a86f00;
+  --color-green: #13824a;
+  --color-red: #d22d4b;
+  --color-orange: #c4581a;
+  --color-purple: #6f3cc6;
+}
+html[data-rbm-theme="light"] .neon,
+html[data-rbm-theme="light"] .neon-soft {
+  text-shadow: 1px 1px 0 color-mix(in srgb, currentColor 22%, transparent);
+}
+html[data-rbm-theme="light"] .neon-box {
+  box-shadow:
+    0 0 0 2px #141210,
+    5px 5px 0 0 color-mix(in srgb, var(--glow, #22f3ff) 85%, transparent);
+}
+html.rbm-inking::view-transition-old(root),
+html.rbm-inking::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+html.rbm-inking::view-transition-new(root) {
+  -webkit-mask-image: var(--rbm-splat);
+  mask-image: var(--rbm-splat);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 6px 6px;
+  mask-size: 6px 6px;
+}
