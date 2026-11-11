@@ -38,6 +38,15 @@ const GAMES = [
     live: true,
   },
   {
+    href: "/conga-crawl",
+    name: "Conga Crawl",
+    tag: "ROGUELIKE · REAL-TIME",
+    blurb: "Lead a cursed wedding's conga line down nine floors. Guests you bump into join the line and fight for you. Don't trip over yourself.",
+    color: "#ff2bd6",
+    icon: "💃",
+    live: true,
+  },
+  {
     href: "/shadow-match",
     name: "Shadow Match",
     tag: "PUZZLE · 3D",
