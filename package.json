@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --no-warnings scripts/selftest.ts",
     "test:dtc": "node --experimental-strip-types --no-warnings scripts/dtc-sim.ts",
-    "test:rbm": "node --experimental-strip-types --no-warnings scripts/rbm-sim.ts"
+    "test:rbm": "node --experimental-strip-types --no-warnings scripts/rbm-sim.ts",
+    "test:pinball": "node --experimental-strip-types --no-warnings scripts/pinball-sim.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",

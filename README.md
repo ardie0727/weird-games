@@ -12,6 +12,8 @@ Odd little browser games. The first one is **Query Arcade**: a fast, retro arcad
 - `/down-the-couch` is Down the Couch: a roguelite card RPG. Four heroes, four areas with bosses, a branching map,
   shops, campfires, events, trinkets and level-ups. Runs and Junk Drawer upgrades save in the browser (no server).
   `npm run test:dtc` plays hundreds of bot runs to catch stuck states and check balance.
+- `/pinball-dungeon` is Pinball Dungeon: a pinball roguelike where you are the ball. 12 rooms of monsters, bosses in rooms
+  4, 8 and 12, an upgrade pick after each room. Bests save in the browser. `npm run test:pinball -- <runs> <skill>` plays bot runs.
 
 ## Query Arcade in one minute
 

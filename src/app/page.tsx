@@ -38,6 +38,15 @@ const GAMES = [
     live: true,
   },
   {
+    href: "/pinball-dungeon",
+    name: "Pinball Dungeon",
+    tag: "ROGUELIKE · PINBALL",
+    blurb: "You are the pinball. Smash slimes, skeletons and a Bone Dragon across 12 dungeon rooms, and pick an upgrade after every room.",
+    color: "#22f3ff",
+    icon: "🪩",
+    live: true,
+  },
+  {
     href: "/shadow-match",
     name: "Shadow Match",
     tag: "PUZZLE · 3D",
