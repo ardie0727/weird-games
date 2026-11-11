@@ -32,7 +32,7 @@ import { INPUT_MS, Mirror, PROTOCOL, SNAP_MS, cleanCode, encodeSnap, type GuestM
 import { joinRoom, NetError, Room, type Link as NetLink } from "@/lib/rbm/rtc";
 import { play, unlock } from "@/lib/rbm/sound";
 import { DEAD, STICK, camera, drawGame, type Stick, type Theme } from "./draw";
-import { applyTheme, inkFlip, savedTheme } from "./inkFlip";
+import { applyTheme, pixelFlip, savedTheme } from "./themeFlip";
 
 type Screen = "title" | "friends" | "connecting" | "lobby" | "play" | "over";
 type Role = "solo" | "host" | "guest";
@@ -112,7 +112,7 @@ export function RubberBulletMan() {
     return () => void delete document.documentElement.dataset.rbmTheme;
   }, []);
   const flipTheme = () =>
-    inkFlip(themeRef.current === "dark" ? "light" : "dark", themeBtn.current, (t) => {
+    pixelFlip(themeRef.current === "dark" ? "light" : "dark", themeBtn.current, (t) => {
       themeRef.current = t;
       setThemeState(t);
     });

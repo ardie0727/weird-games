@@ -346,7 +346,7 @@ textarea.sql {
   }
 }
 
-/* ---------- Rubber Bullet Man: paper (light) theme and the ink-splat switch ---------- */
+/* ---------- Rubber Bullet Man: paper (light) theme ---------- */
 /* The pink accent stays the same in both themes; everything else flips. */
 html[data-rbm-theme="light"] {
   color-scheme: light;
@@ -371,17 +371,4 @@ html[data-rbm-theme="light"] .neon-box {
   box-shadow:
     0 0 0 2px #141210,
     5px 5px 0 0 color-mix(in srgb, var(--glow, #22f3ff) 85%, transparent);
-}
-html.rbm-inking::view-transition-old(root),
-html.rbm-inking::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
-}
-html.rbm-inking::view-transition-new(root) {
-  -webkit-mask-image: var(--rbm-splat);
-  mask-image: var(--rbm-splat);
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-size: 6px 6px;
-  mask-size: 6px 6px;
 }
